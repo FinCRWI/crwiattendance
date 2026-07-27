@@ -38,6 +38,7 @@ import { renderTeamActivitiesPage } from './ui/team-activities.js';
 import { renderDashboardSectionPage, initDashboardSectionPage } from './ui/dashboard-sections.js';
 import { renderLetterPad } from './ui/letter-pad.js';
 import { renderJourneyReflectionCard } from './ui/journey-reflection.js';
+import { initDashboardLayout, toggleEditMode, applyDashboardLayout, isEditModeActive } from './ui/dashboard-layout.js';
 
 // Re-export for ESM usage
 export {
@@ -75,7 +76,11 @@ export {
     renderDashboardSectionPage,
     initDashboardSectionPage,
     renderLetterPad,
-    renderJourneyReflectionCard
+    renderJourneyReflectionCard,
+    initDashboardLayout,
+    toggleEditMode,
+    applyDashboardLayout,
+    isEditModeActive
 };
 
 export const AppUI = {
@@ -113,7 +118,11 @@ export const AppUI = {
     renderDashboardSectionPage,
     initDashboardSectionPage,
     renderLetterPad,
-    renderJourneyReflectionCard
+    renderJourneyReflectionCard,
+    initDashboardLayout,
+    toggleEditMode,
+    applyDashboardLayout,
+    isEditModeActive
 };
 
 

@@ -3,6 +3,8 @@
  * Renders the mini calendar for the dashboard.
  */
 
+import { onAction } from '../utils/action-router.js';
+
 export const renderYearlyPlan = (plans) => {
     const today = new Date();
     const currentUser = window.AppAuth?.getUser();
@@ -38,16 +40,14 @@ export const renderYearlyPlan = (plans) => {
         const dayType = window.AppAnalytics ? window.AppAnalytics.getDayType(new Date(year, month, d)) : 'Work Day';
 
         calendarHTML += `
-            <div class="cal-day ${isToday ? 'today' : ''} ${hasLeave ? 'has-leave' : ''} ${hasEvent ? 'has-event' : ''} ${hasWork ? 'has-work' : ''} ${dayType === 'Holiday' ? 'is-holiday' : ''} ${dayType === 'Half Day' ? 'is-half-day' : ''}" 
-                    onmousedown="window.app_prefetchDayPlan?.('${dStr}')"
-                    onpointerdown="window.app_prefetchDayPlan?.('${dStr}')"
-                    onclick="window.app_openDayPlan('${dStr}')"
-                    onmouseenter="window.app_prefetchDayPlan?.('${dStr}')"
-                    onpointerenter="window.app_prefetchDayPlan?.('${dStr}')"
-                    onfocus="window.app_prefetchDayPlan?.('${dStr}')"
+            <div class="cal-day${isToday ? ' today' : ''}"
+                    data-date="${dStr}"
+                    data-day-type="${dayType}"
+                    data-has-leave="${hasLeave}"
+                    data-has-event="${hasEvent}"
+                    data-has-work="${hasWork}"
                     tabindex="0"
                     role="button"
-                    style="cursor:pointer;"
                     title="${dayType}">
                 ${d}
             </div>
@@ -64,70 +64,87 @@ export const renderYearlyPlan = (plans) => {
         }
     }
 
+    // Register button actions with shared router (once).
+    if (!window._tsActionRegistered) {
+        window._tsActionRegistered = true;
+        onAction('add-plan', () => window.app_quickAddPersonalPlan?.());
+        onAction('edit-plan', () => window.app_quickEditPersonalPlan?.());
+        onAction('add-holiday', () => window.app_openEventModal?.());
+        onAction('prev-month', () => window.app_changeCalMonth?.(-1));
+        onAction('next-month', () => window.app_changeCalMonth?.(1));
+
+        // Day cell click + prefetch listeners (not data-ts-action)
+        document.addEventListener('click', (e) => {
+            const day = e.target.closest('.cal-day[data-date]');
+            if (day) window.app_openDayPlan?.(day.dataset.date);
+        });
+        document.addEventListener('mouseover', (e) => {
+            const day = e.target.closest('.cal-day[data-date]');
+            if (day) window.app_prefetchDayPlan?.(day.dataset.date);
+        });
+        document.addEventListener('mousedown', (e) => {
+            const day = e.target.closest('.cal-day[data-date]');
+            if (day) window.app_prefetchDayPlan?.(day.dataset.date);
+        });
+        document.addEventListener('focusin', (e) => {
+            const day = e.target.closest('.cal-day[data-date]');
+            if (day) window.app_prefetchDayPlan?.(day.dataset.date);
+        });
+    }
+
     return `
-        <div class="card dashboard-team-schedule-card" style="padding: 0.75rem; display:flex; flex-direction:column;">
-            <div style="margin-bottom:0.75rem; border-bottom:1px solid #f3f4f6; padding-bottom:0.4rem;">
-                    <h4 style="margin:0; color:#1f2937; font-size: 1rem;">Team Schedule</h4>
-                    <span style="font-size:0.7rem; color:#6b7280;">Planned Leaves & Events</span>
+        <div class="card dashboard-team-schedule-card ts-card">
+            <div class="ts-card-head">
+                <h4>Team Schedule</h4>
+                <span>Planned Leaves & Events</span>
             </div>
 
-            <div style="margin-bottom:0.6rem; padding-bottom:0.4rem; display:flex; justify-content:space-between; align-items:center;">
-                    <div style="display:flex; align-items:center; gap:0.4rem;">
-                    <button onclick="window.app_changeCalMonth(-1)" style="background:none; border:none; color:#6b7280; cursor:pointer; padding:2px;"><i class="fa-solid fa-chevron-left"></i></button>
-                    <div style="text-align:center; min-width:70px;">
-                        <h4 style="margin:0; color:#1f2937; font-size:0.9rem;">${monthNames[month]} ${year}</h4>
-                    </div>
-                    <button onclick="window.app_changeCalMonth(1)" style="background:none; border:none; color:#6b7280; cursor:pointer; padding:2px;"><i class="fa-solid fa-chevron-right"></i></button>
-                    </div>
-                    <div style="display:flex; align-items:center; gap:0.35rem;">
-                        <button
-                            type="button"
-                            onclick="window.app_quickAddPersonalPlan?.()"
-                            title="Add Personal Plan"
-                            style="display:inline-flex; align-items:center; gap:0.3rem; padding:0.3rem 0.55rem; border:1px solid #bfdbfe; border-radius:999px; background:linear-gradient(135deg,#eff6ff,#dbeafe); color:#1d4ed8; font-size:0.64rem; font-weight:800; cursor:pointer; white-space:nowrap;"
-                        >
-                            <i class="fa-solid fa-plus"></i>
-                            <span>Add Personal Plan</span>
-                        </button>
-                        <button
-                            type="button"
-                            onclick="window.app_quickEditPersonalPlan?.()"
-                            title="Edit Personal Plan"
-                            style="display:inline-flex; align-items:center; gap:0.3rem; padding:0.3rem 0.55rem; border:1px solid #cbd5e1; border-radius:999px; background:linear-gradient(135deg,#ffffff,#f8fafc); color:#475569; font-size:0.64rem; font-weight:800; cursor:pointer; white-space:nowrap;"
-                        >
-                            <i class="fa-regular fa-pen-to-square"></i>
-                            <span>Edit Personal Plan</span>
-                        </button>
-                        ${canManageHoliday ? `<button onclick="window.app_openEventModal()" style="background:none; border:none; color:var(--primary); cursor:pointer;" title="Add Holiday / Event"><i class="fa-solid fa-plus-circle"></i></button>` : ''}
-                    </div>
+            <div class="ts-header-row" data-ts-cal-handler>
+                <div class="ts-month-nav">
+                    <button data-ts-action="prev-month" title="Previous month"><i class="fa-solid fa-chevron-left"></i></button>
+                    <h4>${monthNames[month]} ${year}</h4>
+                    <button data-ts-action="next-month" title="Next month"><i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+                <div class="ts-btn-row">
+                    <button
+                        type="button"
+                        class="ts-btn ts-btn-add"
+                        data-ts-action="add-plan"
+                        title="Add Personal Plan (work tasks, leaves, events)"
+                    >
+                        <i class="fa-solid fa-plus"></i>
+                        <span>Add Plan</span>
+                    </button>
+                    <button
+                        type="button"
+                        class="ts-btn ts-btn-edit"
+                        data-ts-action="edit-plan"
+                        title="Edit your existing Personal Plan"
+                    >
+                        <i class="fa-regular fa-pen-to-square"></i>
+                        <span>Edit Plan</span>
+                    </button>
+                    ${canManageHoliday ? `<button class="ts-btn ts-btn-holiday" data-ts-action="add-holiday" title="Add Holiday / Event"><i class="fa-solid fa-plus-circle"></i></button>` : ''}
+                </div>
             </div>
-            <div class="calendar-grid-mini" style="display:grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align:center; font-size: 0.65rem;">
-                <div style="font-weight:700; color:#9ca3af;">S</div>
-                <div style="font-weight:700; color:#9ca3af;">M</div>
-                <div style="font-weight:700; color:#9ca3af;">T</div>
-                <div style="font-weight:700; color:#9ca3af;">W</div>
-                <div style="font-weight:700; color:#9ca3af;">T</div>
-                <div style="font-weight:700; color:#9ca3af;">F</div>
-                <div style="font-weight:700; color:#9ca3af;">S</div>
+
+            <div class="ts-cal-grid">
+                <div class="ts-weekday">S</div>
+                <div class="ts-weekday">M</div>
+                <div class="ts-weekday">T</div>
+                <div class="ts-weekday">W</div>
+                <div class="ts-weekday">T</div>
+                <div class="ts-weekday">F</div>
+                <div class="ts-weekday">S</div>
                 ${calendarHTML}
             </div>
-            <div style="margin-top:0.6rem; display:flex; flex-wrap:wrap; gap:0.4rem; font-size:0.55rem; color:#6b7280; justify-content:center;">
-                <span style="display:flex; align-items:center; gap:2px;"><span style="width:5px; height:5px; background:#b91c1c; border-radius:50%;"></span> Leave</span>
-                <span style="display:flex; align-items:center; gap:2px;"><span style="width:5px; height:5px; background:#166534; border-radius:50%;"></span> Event</span>
-                <span style="display:flex; align-items:center; gap:2px;"><span style="width:5px; height:5px; background:#eee; border-radius:50%; border:0.5px solid #ccc;"></span> Holiday</span>
-                <span style="display:flex; align-items:center; gap:2px;"><span style="width:5px; height:5px; background:#fffbeb; border-radius:50%; border:0.5px solid #d97706;"></span> Half</span>
+
+            <div class="ts-legend">
+                <span class="ts-legend-item"><span class="ts-legend-dot ts-legend-dot-leave"></span> Leave</span>
+                <span class="ts-legend-item"><span class="ts-legend-dot ts-legend-dot-event"></span> Event</span>
+                <span class="ts-legend-item"><span class="ts-legend-dot ts-legend-dot-holiday"></span> Holiday</span>
+                <span class="ts-legend-item"><span class="ts-legend-dot ts-legend-dot-half"></span> Half</span>
             </div>
-            <style>
-                .cal-day { padding: 4px; border-radius: 4px; position: relative; transition: all 0.2s; border: 1px solid transparent; }
-                .cal-day:hover:not(.empty) { background: #f3f4f6; }
-                .cal-day.today { background: var(--primary) !important; color: white !important; font-weight: 700; border-color: transparent !important; }
-                .cal-day.has-leave { background: #fee2e2; color: #b91c1c; }
-                .cal-day.has-event { background: #dcfce7; color: #166534; }
-                .cal-day.has-work { border-color: #818cf8; }
-                .cal-day.is-holiday { background: #f9fafb; color: #9ca3af; opacity: 0.8; }
-                .cal-day.is-half-day { background: #fffbeb; color: #d97706; border-color: #fde68a; }
-                .cal-day.empty { visibility: hidden; }
-            </style>
         </div>
     `;
 };

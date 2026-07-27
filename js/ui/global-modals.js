@@ -4,6 +4,26 @@
  */
 
 import { renderCheckoutModal } from './checkout-form.js';
+import { onAction } from '../utils/action-router.js';
+
+if (!window._globalModalActionsRegistered) {
+    window._globalModalActionsRegistered = true;
+
+    onAction('set-duration', (el) => {
+        const mins = Number(el.dataset.minutes) || 0;
+        if (mins > 0) document.dispatchEvent(new CustomEvent('set-duration', { detail: mins }));
+    });
+
+    onAction('set-location-preset', (el) => {
+        const value = el.dataset.location || '';
+        if (value) document.getElementById('log-location').value = value;
+    });
+
+    onAction('hide-modal', (el) => {
+        const id = el.dataset.target || '';
+        if (id) document.getElementById(id).style.display = 'none';
+    });
+}
 
 export function renderModals() {
     const user = window.AppAuth?.getUser();
@@ -15,7 +35,7 @@ export function renderModals() {
         ${renderCheckoutModal(budgetSelectHtml)}
 
         <!-- Add Log Modal (Modern) -->
-        <div id="log-modal" class="modal-overlay" style="display: none;">
+        <div id="log-modal" class="modal-overlay gm-hidden">
             <div class="modal-content" style="width: 100%; max-width: 500px; padding: 0;">
                 <div style="padding: 1.5rem; border-bottom: 1px solid #f3f4f6;">
                     <h3 style="margin: 0;">New Time Entry</h3>
@@ -30,44 +50,44 @@ export function renderModals() {
                         </select>
                     </div>
                     <div>
-                        <label style="display: block; font-size: 0.85rem; font-weight: 500; color: #374151; margin-bottom: 0.5rem;">Date</label>
+                        <label class="gm-label-block">Date</label>
                         <input type="date" name="date" id="log-date" required style="width: 100%; padding: 0.75rem; border: 1px solid #e5e7eb; border-radius: 0.5rem; background: #f9fafb; font-family: inherit;">
                     </div>
 
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
                         <div>
-                            <label style="display: block; font-size: 0.85rem; font-weight: 500; color: #374151; margin-bottom: 0.5rem;">Start Time</label>
+                            <label class="gm-label-block">Start Time</label>
                             <input type="time" name="checkIn" id="log-start-time" required style="width: 100%; padding: 0.75rem; border: 1px solid #e5e7eb; border-radius: 0.5rem; background: #fff; font-family: inherit;">
                         </div>
                         <div>
-                            <label style="display: block; font-size: 0.85rem; font-weight: 500; color: #374151; margin-bottom: 0.5rem;">End Time</label>
+                            <label class="gm-label-block">End Time</label>
                             <input type="time" name="checkOut" id="log-end-time" required style="width: 100%; padding: 0.75rem; border: 1px solid #e5e7eb; border-radius: 0.5rem; background: #fff; font-family: inherit;">
                         </div>
                     </div>
 
                     <div>
-                        <label style="display: block; font-size: 0.85rem; font-weight: 500; color: #374151; margin-bottom: 0.5rem;">Quick Duration</label>
+                        <label class="gm-label-block">Quick Duration</label>
                         <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                            <button type="button" class="chip-btn" onclick="document.dispatchEvent(new CustomEvent('set-duration', {detail: 30}))">30m</button>
-                            <button type="button" class="chip-btn" onclick="document.dispatchEvent(new CustomEvent('set-duration', {detail: 60}))">1h</button>
-                            <button type="button" class="chip-btn" onclick="document.dispatchEvent(new CustomEvent('set-duration', {detail: 240}))">4h</button>
-                            <button type="button" class="chip-btn" onclick="document.dispatchEvent(new CustomEvent('set-duration', {detail: 480}))">8h</button>
+                            <button type="button" class="chip-btn" data-ts-action="set-duration" data-minutes="30">30m</button>
+                            <button type="button" class="chip-btn" data-ts-action="set-duration" data-minutes="60">1h</button>
+                            <button type="button" class="chip-btn" data-ts-action="set-duration" data-minutes="240">4h</button>
+                            <button type="button" class="chip-btn" data-ts-action="set-duration" data-minutes="480">8h</button>
                         </div>
                     </div>
 
                      <div>
-                        <label style="display: block; font-size: 0.85rem; font-weight: 500; color: #374151; margin-bottom: 0.5rem;">Work Summary</label>
+                        <label class="gm-label-block">Work Summary</label>
                         <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem;">
-                            <button type="button" class="chip-btn" onclick="document.getElementById('log-location').value = 'Work - Home'">🏠 Work - Home</button>
-                            <button type="button" class="chip-btn" onclick="document.getElementById('log-location').value = 'Training'">🎓 Training</button>
-                            <button type="button" class="chip-btn" onclick="document.getElementById('log-location').value = 'Client Visit'">🤝 Client Visit</button>
-                            <button type="button" class="chip-btn" onclick="document.getElementById('log-location').value = 'Field Work'">🚧 Field Work</button>
+                            <button type="button" class="chip-btn" data-ts-action="set-location-preset" data-location="Work - Home">🏠 Work - Home</button>
+                            <button type="button" class="chip-btn" data-ts-action="set-location-preset" data-location="Training">🎓 Training</button>
+                            <button type="button" class="chip-btn" data-ts-action="set-location-preset" data-location="Client Visit">🤝 Client Visit</button>
+                            <button type="button" class="chip-btn" data-ts-action="set-location-preset" data-location="Field Work">🚧 Field Work</button>
                         </div>
                         <input type="text" name="workDescription" id="log-location" placeholder="Describe the work done..." required style="width: 100%; padding: 0.75rem; border: 1px solid #e5e7eb; border-radius: 0.5rem;">
                     </div>
 
                     <div style="display: flex; gap: 1rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #f3f4f6;">
-                        <button type="button" onclick="document.getElementById('log-modal').style.display = 'none'" style="flex: 1; padding: 0.75rem; border: 1px solid #e5e7eb; background: white; border-radius: 0.5rem; cursor: pointer; color: #374151; font-weight: 500;">Cancel</button>
+                        <button type="button" data-ts-action="hide-modal" data-target="log-modal" style="flex: 1; padding: 0.75rem; border: 1px solid #e5e7eb; background: white; border-radius: 0.5rem; cursor: pointer; color: #374151; font-weight: 500;">Cancel</button>
                         <button type="submit" class="action-btn" style="flex: 2; padding: 0.75rem; border-radius: 0.5rem;">
                             <i class="fa-solid fa-check"></i> Save Entry
                         </button>
@@ -77,15 +97,15 @@ export function renderModals() {
         </div>
 
         <!-- Request Leave Modal -->
-        <div id="leave-modal" class="modal-overlay" style="display: none;">
+        <div id="leave-modal" class="modal-overlay gm-hidden">
             <div class="modal-content" style="width: 100%; max-width: 500px;">
                 <h3>Request Leave</h3>
-                <form id="leave-request-form" style="display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem;">
+                <form id="leave-request-form" class="gm-flex-col-mt">
                     <div style="display: flex; gap: 1rem;">
-                        <label style="flex:1">From
+                        <label class="gm-flex-fill">From
                             <input type="date" name="startDate" required style="width:100%; padding:0.5rem; border:1px solid #ddd; border-radius:0.5rem;">
                         </label>
-                        <label style="flex:1">To
+                        <label class="gm-flex-fill">To
                             <input type="date" name="endDate" required style="width:100%; padding:0.5rem; border:1px solid #ddd; border-radius:0.5rem;">
                         </label>
                     </div>
@@ -110,8 +130,8 @@ export function renderModals() {
                         <textarea name="reason" rows="3" required style="width:100%; padding:0.5rem; border:1px solid #ddd; border-radius:0.5rem;"></textarea>
                         <div style="margin-top:0.35rem; font-size:0.75rem; color:#92400e; line-height:1.4;">Please mention the reason specifically. If the reason is vague or not clearly mentioned, the leave may not be sanctioned.</div>
                     </label>
-                    <div style="display: flex; gap: 1rem; margin-top: 1rem;">
-                        <button type="button" onclick="document.getElementById('leave-modal').style.display = 'none'" style="flex: 1; padding: 0.75rem; border: 1px solid #ddd; background: white; border-radius: 0.5rem; cursor: pointer;">Cancel</button>
+                    <div class="gm-flex-gap">
+                        <button type="button" data-ts-action="hide-modal" data-target="leave-modal" class="gm-card-flex">Cancel</button>
                         <button type="submit" class="action-btn" style="flex: 1; padding: 0.75rem; border-radius: 0.5rem; background: #be123c;">Submit Request</button>
                     </div>
                 </form>
@@ -119,30 +139,30 @@ export function renderModals() {
         </div>
 
         <!-- Edit User Modal -->
-        <div id="edit-user-modal" class="modal-overlay" style="display: none;">
+        <div id="edit-user-modal" class="modal-overlay gm-hidden">
             <div class="modal-content">
                 <h3>Edit Staff Details</h3>
-                <form id="edit-user-form" style="display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem;">
+                <form id="edit-user-form" class="gm-flex-col-mt">
                     <input type="hidden" name="id" id="edit-user-id">
                     <label>
                         Full Name
-                        <input type="text" name="name" id="edit-user-name" required style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;">
+                        <input type="text" name="name" id="edit-user-name" required class="gm-input">
                     </label>
                     
                     <div style="display: flex; gap: 1rem; background: #fffbeb; padding: 1rem; border-radius: 0.5rem; border: 1px dashed #f59e0b;">
-                        <label style="flex:1">
+                        <label class="gm-flex-fill">
                             Login ID
-                            <input type="text" name="username" id="edit-user-username" required style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;">
+                            <input type="text" name="username" id="edit-user-username" required class="gm-input">
                         </label>
-                        <label style="flex:1">
+                        <label class="gm-flex-fill">
                             Password
-                            <input type="text" name="password" id="edit-user-password" required style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;">
+                            <input type="text" name="password" id="edit-user-password" required class="gm-input">
                         </label>
                     </div>
 
                     <label>
                         Role / Designation
-                        <select name="role" id="edit-user-role" required style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;" onchange="const cb = document.getElementById('edit-user-isAdmin'); cb.checked = (this.value === 'Administrator');">
+                        <select name="role" id="edit-user-role" required class="gm-input" onchange="const cb = document.getElementById('edit-user-isAdmin'); cb.checked = (this.value === 'Administrator');">
                             <option value="Employee">Employee</option>
                             <option value="Administrator">Administrator</option>
                             <option value="Guest">Guest</option>
@@ -151,7 +171,7 @@ export function renderModals() {
                     </label>
                     <label>
                         Department
-                        <select name="dept" id="edit-user-dept" required style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;">
+                        <select name="dept" id="edit-user-dept" required class="gm-input">
                             <option value="Administration">Administration</option>
                             <option value="IT Department">IT Department</option>
                             <option value="HR">HR</option>
@@ -175,41 +195,41 @@ export function renderModals() {
                             <div style="font-size: 0.7rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; text-align: center;">View Only</div>
                             <div style="font-size: 0.7rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; text-align: center;">Full Admin</div>
 
-                            <div style="font-size: 0.82rem; color: #1e293b;">Dashboard</div>
-                            <input type="checkbox" class="perm-check" data-module="dashboard" data-level="view" id="edit-perm-dashboard-view" style="justify-self:center">
-                            <input type="checkbox" class="perm-check" data-module="dashboard" data-level="admin" id="edit-perm-dashboard-admin" style="justify-self:center">
+                            <div class="gm-text">Dashboard</div>
+                            <input type="checkbox" class="perm-check gm-center" data-module="dashboard" data-level="view" id="edit-perm-dashboard-view">
+                            <input type="checkbox" class="perm-check gm-center" data-module="dashboard" data-level="admin" id="edit-perm-dashboard-admin">
 
-                            <div style="font-size: 0.82rem; color: #1e293b;">Leaves</div>
-                            <input type="checkbox" class="perm-check" data-module="leaves" data-level="view" id="edit-perm-leaves-view" style="justify-self:center">
-                            <input type="checkbox" class="perm-check" data-module="leaves" data-level="admin" id="edit-perm-leaves-admin" style="justify-self:center">
+                            <div class="gm-text">Leaves</div>
+                            <input type="checkbox" class="perm-check gm-center" data-module="leaves" data-level="view" id="edit-perm-leaves-view">
+                            <input type="checkbox" class="perm-check gm-center" data-module="leaves" data-level="admin" id="edit-perm-leaves-admin">
 
-                            <div style="font-size: 0.82rem; color: #1e293b;">User Management</div>
-                            <input type="checkbox" class="perm-check" data-module="users" data-level="view" id="edit-perm-users-view" style="justify-self:center">
-                            <input type="checkbox" class="perm-check" data-module="users" data-level="admin" id="edit-perm-users-admin" style="justify-self:center">
+                            <div class="gm-text">User Management</div>
+                            <input type="checkbox" class="perm-check gm-center" data-module="users" data-level="view" id="edit-perm-users-view">
+                            <input type="checkbox" class="perm-check gm-center" data-module="users" data-level="admin" id="edit-perm-users-admin">
 
-                            <div style="font-size: 0.82rem; color: #1e293b;">Attendance Sheet</div>
-                            <input type="checkbox" class="perm-check" data-module="attendance" data-level="view" id="edit-perm-attendance-view" style="justify-self:center">
-                            <input type="checkbox" class="perm-check" data-module="attendance" data-level="admin" id="edit-perm-attendance-admin" style="justify-self:center">
+                            <div class="gm-text">Attendance Sheet</div>
+                            <input type="checkbox" class="perm-check gm-center" data-module="attendance" data-level="view" id="edit-perm-attendance-view">
+                            <input type="checkbox" class="perm-check gm-center" data-module="attendance" data-level="admin" id="edit-perm-attendance-admin">
 
-                            <div style="font-size: 0.82rem; color: #1e293b;">Reports</div>
-                            <input type="checkbox" class="perm-check" data-module="reports" data-level="view" id="edit-perm-reports-view" style="justify-self:center">
-                            <input type="checkbox" class="perm-check" data-module="reports" data-level="admin" id="edit-perm-reports-admin" style="justify-self:center">
+                            <div class="gm-text">Reports</div>
+                            <input type="checkbox" class="perm-check gm-center" data-module="reports" data-level="view" id="edit-perm-reports-view">
+                            <input type="checkbox" class="perm-check gm-center" data-module="reports" data-level="admin" id="edit-perm-reports-admin">
 
-                            <div style="font-size: 0.82rem; color: #1e293b;">Meeting Minutes</div>
-                            <input type="checkbox" class="perm-check" data-module="minutes" data-level="view" id="edit-perm-minutes-view" style="justify-self:center">
-                            <input type="checkbox" class="perm-check" data-module="minutes" data-level="admin" id="edit-perm-minutes-admin" style="justify-self:center">
+                            <div class="gm-text">Meeting Minutes</div>
+                            <input type="checkbox" class="perm-check gm-center" data-module="minutes" data-level="view" id="edit-perm-minutes-view">
+                            <input type="checkbox" class="perm-check gm-center" data-module="minutes" data-level="admin" id="edit-perm-minutes-admin">
 
-                            <div style="font-size: 0.82rem; color: #1e293b;">Company Policies</div>
-                            <input type="checkbox" class="perm-check" data-module="policies" data-level="view" id="edit-perm-policies-view" style="justify-self:center">
-                            <input type="checkbox" class="perm-check" data-module="policies" data-level="admin" id="edit-perm-policies-admin" style="justify-self:center">
+                            <div class="gm-text">Company Policies</div>
+                            <input type="checkbox" class="perm-check gm-center" data-module="policies" data-level="view" id="edit-perm-policies-view">
+                            <input type="checkbox" class="perm-check gm-center" data-module="policies" data-level="admin" id="edit-perm-policies-admin">
 
-                            <div style="font-size: 0.82rem; color: #1e293b;">Birthday Calendar</div>
-                            <input type="checkbox" class="perm-check" data-module="birthday" data-level="view" id="edit-perm-birthday-view" style="justify-self:center">
-                            <input type="checkbox" class="perm-check" data-module="birthday" data-level="admin" id="edit-perm-birthday-admin" style="justify-self:center">
+                            <div class="gm-text">Birthday Calendar</div>
+                            <input type="checkbox" class="perm-check gm-center" data-module="birthday" data-level="view" id="edit-perm-birthday-view">
+                            <input type="checkbox" class="perm-check gm-center" data-module="birthday" data-level="admin" id="edit-perm-birthday-admin">
 
-                            <div style="font-size: 0.82rem; color: #1e293b;">Letter Pad</div>
-                            <input type="checkbox" class="perm-check" data-module="letterPad" data-level="view" id="edit-perm-letterPad-view" style="justify-self:center">
-                            <input type="checkbox" class="perm-check" data-module="letterPad" data-level="admin" id="edit-perm-letterPad-admin" style="justify-self:center">
+                            <div class="gm-text">Letter Pad</div>
+                            <input type="checkbox" class="perm-check gm-center" data-module="letterPad" data-level="view" id="edit-perm-letterPad-view">
+                            <input type="checkbox" class="perm-check gm-center" data-module="letterPad" data-level="admin" id="edit-perm-letterPad-admin">
 
                             <div style="font-size: 0.82rem; color: #1e293b; display: flex; align-items: center; gap: 0.4rem;">
                                 AI Memory Sheet
@@ -223,36 +243,36 @@ export function renderModals() {
                         </div>
                     </div>
                      <div style="display: flex; gap: 1rem;">
-                        <label style="flex:1">
+                        <label class="gm-flex-fill">
                             Email
-                            <input type="email" name="email" id="edit-user-email" required style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;">
+                            <input type="email" name="email" id="edit-user-email" required class="gm-input">
                         </label>
-                        <label style="flex:1">
+                        <label class="gm-flex-fill">
                             Phone
-                            <input type="tel" name="phone" id="edit-user-phone" required style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;">
+                            <input type="tel" name="phone" id="edit-user-phone" required class="gm-input">
                         </label>
                     </div>
                     <div>
                         <div style="font-size: 0.85rem; font-weight: 600; color: #334155; margin-bottom: 0.45rem;">Date of Birth</div>
                         <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:0.75rem;">
                             <label>
-                                <span style="display:block; font-size:0.78rem; color:#64748b; margin-bottom:0.25rem;">Day</span>
-                                <input type="number" name="birthDay" id="edit-user-birth-day" min="1" max="31" placeholder="DD" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;">
+                                <span class="gm-hint">Day</span>
+                                <input type="number" name="birthDay" id="edit-user-birth-day" min="1" max="31" placeholder="DD" class="gm-input">
                             </label>
                             <label>
-                                <span style="display:block; font-size:0.78rem; color:#64748b; margin-bottom:0.25rem;">Month</span>
-                                <input type="number" name="birthMonth" id="edit-user-birth-month" min="1" max="12" placeholder="MM" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;">
+                                <span class="gm-hint">Month</span>
+                                <input type="number" name="birthMonth" id="edit-user-birth-month" min="1" max="12" placeholder="MM" class="gm-input">
                             </label>
                             <label>
-                                <span style="display:block; font-size:0.78rem; color:#64748b; margin-bottom:0.25rem;">Year</span>
-                                <input type="number" name="birthYear" id="edit-user-birth-year" min="1900" max="2100" placeholder="YYYY" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;">
+                                <span class="gm-hint">Year</span>
+                                <input type="number" name="birthYear" id="edit-user-birth-year" min="1900" max="2100" placeholder="YYYY" class="gm-input">
                             </label>
                         </div>
                         <div style="font-size:0.78rem; color:#64748b; margin-top:0.35rem;">You can save any one or more birthday fields. Day and month are required only for reminders.</div>
                     </div>
                     
-                    <div style="display: flex; gap: 1rem; margin-top: 1rem;">
-                        <button type="button" onclick="document.getElementById('edit-user-modal').style.display = 'none'" style="flex: 1; padding: 0.75rem; border: 1px solid #ddd; background: white; border-radius: 0.5rem; cursor: pointer;">Cancel</button>
+                    <div class="gm-flex-gap">
+                        <button type="button" data-ts-action="hide-modal" data-target="edit-user-modal" class="gm-card-flex">Cancel</button>
                         <button type="submit" class="action-btn" style="flex: 1; padding: 0.75rem; border-radius: 0.5rem;">Update Details</button>
                     </div>
                 </form>
@@ -260,11 +280,11 @@ export function renderModals() {
         </div>
 
         <!-- User Details Modal (Logs) -->
-        <div id="user-details-modal" class="modal-overlay" style="display: none;">
+        <div id="user-details-modal" class="modal-overlay gm-hidden">
             <div class="modal-content" style="max-width: 700px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
                     <h3>Staff Attendance Record</h3>
-                    <button onclick="document.getElementById('user-details-modal').style.display='none'" style="background:none; border:none; cursor:pointer; font-size:1.2rem;"><i class="fa-solid fa-xmark"></i></button>
+                    <button data-ts-action="hide-modal" data-target="user-details-modal" style="background:none; border:none; cursor:pointer; font-size:1.2rem;"><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <div id="user-details-content">
                     <!-- Injected by JS -->
@@ -273,18 +293,18 @@ export function renderModals() {
         </div>
 
         <!-- Send Notification Modal -->
-         <div id="notify-modal" class="modal-overlay" style="display: none;">
+         <div id="notify-modal" class="modal-overlay gm-hidden">
             <div class="modal-content">
                 <h3>Send Notification</h3>
-                <form id="notify-form" style="display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem;">
+                <form id="notify-form" class="gm-flex-col-mt">
                     <input type="hidden" name="toUserId" id="notify-user-id">
                     <label>
                         Message
                         <textarea name="message" required rows="4" placeholder="Type your message here..." style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem; font-family: inherit;"></textarea>
                     </label>
                     
-                    <div style="display: flex; gap: 1rem; margin-top: 1rem;">
-                        <button type="button" onclick="document.getElementById('notify-modal').style.display = 'none'" style="flex: 1; padding: 0.75rem; border: 1px solid #ddd; background: white; border-radius: 0.5rem; cursor: pointer;">Cancel</button>
+                    <div class="gm-flex-gap">
+                        <button type="button" data-ts-action="hide-modal" data-target="notify-modal" class="gm-card-flex">Cancel</button>
                         <button type="submit" class="action-btn" style="flex: 1; padding: 0.75rem; border-radius: 0.5rem;">Send Message</button>
                     </div>
                 </form>
@@ -292,29 +312,29 @@ export function renderModals() {
         </div>
         
          <!-- Add User Modal -->
-        <div id="add-user-modal" class="modal-overlay" style="display: none;">
+        <div id="add-user-modal" class="modal-overlay gm-hidden">
             <div class="modal-content">
                 <h3>Create New Account</h3>
-                <form id="add-user-form" style="display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem;">
+                <form id="add-user-form" class="gm-flex-col-mt">
                     <label>
                         Full Name
-                        <input type="text" name="name" required style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;">
+                        <input type="text" name="name" required class="gm-input">
                     </label>
                     
                     <div style="display: flex; gap: 1rem; background: #f9fafb; padding: 1rem; border-radius: 0.5rem; border: 1px dashed #d1d5db;">
-                        <label style="flex:1">
+                        <label class="gm-flex-fill">
                             Login ID
-                            <input type="text" name="username" placeholder="e.g. jomit" required style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;">
+                            <input type="text" name="username" placeholder="e.g. jomit" required class="gm-input">
                         </label>
-                        <label style="flex:1">
+                        <label class="gm-flex-fill">
                             Password
-                            <input type="text" name="password" placeholder="e.g. secret123" required style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;">
+                            <input type="text" name="password" placeholder="e.g. secret123" required class="gm-input">
                         </label>
                     </div>
 
                     <label>
                         Role / Designation
-                        <select name="role" id="add-user-role" required style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;" onchange="const cb = document.getElementById('add-user-isAdmin'); cb.checked = (this.value === 'Administrator');">
+                        <select name="role" id="add-user-role" required class="gm-input" onchange="const cb = document.getElementById('add-user-isAdmin'); cb.checked = (this.value === 'Administrator');">
                             <option value="Employee">Employee</option>
                             <option value="Administrator">Administrator</option>
                             <option value="Guest">Guest</option>
@@ -323,7 +343,7 @@ export function renderModals() {
                     </label>
                     <label>
                         Department
-                        <select name="dept" id="add-user-dept" required style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;">
+                        <select name="dept" id="add-user-dept" required class="gm-input">
                             <option value="Administration">Administration</option>
                             <option value="IT Department">IT Department</option>
                             <option value="HR">HR</option>
@@ -348,92 +368,92 @@ export function renderModals() {
                             <div style="font-size: 0.75rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; text-align: center;">Full Admin</div>
                             
                             <!-- Dashboard -->
-                            <div style="font-size: 0.85rem; font-weight: 600; color: #1e293b;">Dashboard</div>
+                            <div class="gm-label">Dashboard</div>
                             <input type="checkbox" class="perm-check" data-module="dashboard" data-level="view" id="add-perm-dashboard-view">
                             <input type="checkbox" class="perm-check" data-module="dashboard" data-level="admin" id="add-perm-dashboard-admin">
 
                             <!-- Leaves -->
-                            <div style="font-size: 0.85rem; font-weight: 600; color: #1e293b;">Leaves</div>
+                            <div class="gm-label">Leaves</div>
                             <input type="checkbox" class="perm-check" data-module="leaves" data-level="view" id="add-perm-leaves-view">
                             <input type="checkbox" class="perm-check" data-module="leaves" data-level="admin" id="add-perm-leaves-admin">
 
                             <!-- Users -->
-                            <div style="font-size: 0.85rem; font-weight: 600; color: #1e293b;">User Management</div>
+                            <div class="gm-label">User Management</div>
                             <input type="checkbox" class="perm-check" data-module="users" data-level="view" id="add-perm-users-view">
                             <input type="checkbox" class="perm-check" data-module="users" data-level="admin" id="add-perm-users-admin">
 
                             <!-- AI Memory -->
-                            <div style="font-size: 0.85rem; font-weight: 600; color: #1e293b;">AI Memory Sheet</div>
+                            <div class="gm-label">AI Memory Sheet</div>
                             <input type="checkbox" name="canAccessStaffAiMemory" id="add-user-can-access-staff-ai-memory" style="width: 1.1rem; height: 1.1rem;">
                             <div style="font-size: 0.78rem; color: #475569;">Allow this staff member to open the AI memory sheet.</div>
 
                             <!-- Letter Pad -->
-                            <div style="font-size: 0.85rem; font-weight: 600; color: #1e293b;">Letter Pad</div>
+                            <div class="gm-label">Letter Pad</div>
                             <input type="checkbox" class="perm-check" data-module="letterPad" data-level="view" id="add-perm-letterPad-view">
                             <input type="checkbox" class="perm-check" data-module="letterPad" data-level="admin" id="add-perm-letterPad-admin">
 
                             <!-- Attendance -->
-                            <div style="font-size: 0.85rem; font-weight: 600; color: #1e293b;">Attendance Sheet</div>
+                            <div class="gm-label">Attendance Sheet</div>
                             <input type="checkbox" class="perm-check" data-module="attendance" data-level="view" id="add-perm-attendance-view">
                             <input type="checkbox" class="perm-check" data-module="attendance" data-level="admin" id="add-perm-attendance-admin">
 
                             <!-- Reports -->
-                            <div style="font-size: 0.85rem; font-weight: 600; color: #1e293b;">Reports</div>
+                            <div class="gm-label">Reports</div>
                             <input type="checkbox" class="perm-check" data-module="reports" data-level="view" id="add-perm-reports-view">
                             <input type="checkbox" class="perm-check" data-module="reports" data-level="admin" id="add-perm-reports-admin">
 
                             <!-- Minutes -->
-                            <div style="font-size: 0.85rem; font-weight: 600; color: #1e293b;">Meeting Minutes</div>
+                            <div class="gm-label">Meeting Minutes</div>
                             <input type="checkbox" class="perm-check" data-module="minutes" data-level="view" id="add-perm-minutes-view">
                             <input type="checkbox" class="perm-check" data-module="minutes" data-level="admin" id="add-perm-minutes-admin">
 
                             <!-- Policies -->
-                            <div style="font-size: 0.85rem; font-weight: 600; color: #1e293b;">Company Policies</div>
+                            <div class="gm-label">Company Policies</div>
                             <input type="checkbox" class="perm-check" data-module="policies" data-level="view" id="add-perm-policies-view">
                             <input type="checkbox" class="perm-check" data-module="policies" data-level="admin" id="add-perm-policies-admin">
 
                             <!-- Birthday -->
-                            <div style="font-size: 0.85rem; font-weight: 600; color: #1e293b;">Birthday Calendar</div>
+                            <div class="gm-label">Birthday Calendar</div>
                             <input type="checkbox" class="perm-check" data-module="birthday" data-level="view" id="add-perm-birthday-view">
                             <input type="checkbox" class="perm-check" data-module="birthday" data-level="admin" id="add-perm-birthday-admin">
 
                         </div>
                     </div>
                      <div style="display: flex; gap: 1rem;">
-                        <label style="flex:1">
+                        <label class="gm-flex-fill">
                             Email
-                            <input type="email" name="email" required style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;">
+                            <input type="email" name="email" required class="gm-input">
                         </label>
-                        <label style="flex:1">
+                        <label class="gm-flex-fill">
                             Phone
-                            <input type="tel" name="phone" required style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;">
+                            <input type="tel" name="phone" required class="gm-input">
                         </label>
                     </div>
                     <div>
                         <div style="font-size: 0.85rem; font-weight: 600; color: #334155; margin-bottom: 0.45rem;">Date of Birth</div>
                         <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:0.75rem;">
                             <label>
-                                <span style="display:block; font-size:0.78rem; color:#64748b; margin-bottom:0.25rem;">Day</span>
-                                <input type="number" name="birthDay" min="1" max="31" placeholder="DD" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;">
+                                <span class="gm-hint">Day</span>
+                                <input type="number" name="birthDay" min="1" max="31" placeholder="DD" class="gm-input">
                             </label>
                             <label>
-                                <span style="display:block; font-size:0.78rem; color:#64748b; margin-bottom:0.25rem;">Month</span>
-                                <input type="number" name="birthMonth" min="1" max="12" placeholder="MM" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;">
+                                <span class="gm-hint">Month</span>
+                                <input type="number" name="birthMonth" min="1" max="12" placeholder="MM" class="gm-input">
                             </label>
                             <label>
-                                <span style="display:block; font-size:0.78rem; color:#64748b; margin-bottom:0.25rem;">Year</span>
-                                <input type="number" name="birthYear" min="1900" max="2100" placeholder="YYYY" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;">
+                                <span class="gm-hint">Year</span>
+                                <input type="number" name="birthYear" min="1900" max="2100" placeholder="YYYY" class="gm-input">
                             </label>
                         </div>
                         <div style="font-size:0.78rem; color:#64748b; margin-top:0.35rem;">You can save any one or more birthday fields. Day and month are required only for reminders.</div>
                     </div>
                     <label>
                         Joining Date
-                        <input type="date" name="joinDate" required style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 0.5rem;">
+                        <input type="date" name="joinDate" required class="gm-input">
                     </label>
                     
-                    <div style="display: flex; gap: 1rem; margin-top: 1rem;">
-                        <button type="button" onclick="document.getElementById('add-user-modal').style.display = 'none'" style="flex: 1; padding: 0.75rem; border: 1px solid #ddd; background: white; border-radius: 0.5rem; cursor: pointer;">Cancel</button>
+                    <div class="gm-flex-gap">
+                        <button type="button" data-ts-action="hide-modal" data-target="add-user-modal" class="gm-card-flex">Cancel</button>
                         <button type="submit" class="action-btn" style="flex: 1; padding: 0.75rem; border-radius: 0.5rem;">Create Account</button>
                     </div>
                 </form>

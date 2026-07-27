@@ -415,29 +415,43 @@ export class Calendar {
         const currentUser = AppAuth.getUser();
         if (!currentUser) throw new Error("Not authenticated");
 
-        const planScope = this.normalizePlanScope(options.planScope);
         const targetId = targetUserId || currentUser.id;
-        const allUsers = await this.db.getAll('users');
-        const targetUser = allUsers.find(u => u.id === targetId);
+
+        // Support planScope as an array to batch personal + annual writes in parallel.
+        const scopes = Array.isArray(options.planScope) ? options.planScope : [options.planScope || 'personal'];
+
+        const targetUser = targetId === currentUser.id
+            ? currentUser
+            : await this.db.get('users', targetId);
 
         if (!targetUser) {
-            console.error("setWorkPlan Error: Target user not found", { targetId, currentUser, allUsersCount: allUsers.length });
+            console.error("setWorkPlan Error: Target user not found", { targetId, currentUser });
             throw new Error("Target user not found");
         }
 
-        const workPlan = {
-            id: this.getWorkPlanId(date, targetId, planScope),
-            userId: planScope === 'annual' ? 'annual_shared' : targetId,
-            userName: planScope === 'annual' ? 'All Staff' : targetUser.name,
-            date: date,
-            plans: Array.isArray(plans) ? plans : [], // includes hidden removal markers used to stop carry-forward
-            planScope,
-            createdById: currentUser.id,
-            createdByName: currentUser.name || 'Admin',
-            updatedAt: new Date().toISOString()
-        };
-        const saved = await this.db.put('work_plans', workPlan);
-        this.invalidateCarryForwardCache();
+        // Build one document per scope and write them in parallel.
+        // Each scope only gets plans that match its scope (prevents data leak).
+        const writePromises = scopes.map((scope) => {
+            const normalizedScope = this.normalizePlanScope(scope);
+            const scopedPlans = Array.isArray(plans)
+                ? plans.filter(p => p.planScope === normalizedScope)
+                : [];
+            const workPlan = {
+                id: this.getWorkPlanId(date, targetId, normalizedScope),
+                userId: normalizedScope === 'annual' ? 'annual_shared' : targetId,
+                userName: normalizedScope === 'annual' ? 'All Staff' : targetUser.name,
+                date: date,
+                plans: scopedPlans,
+                planScope: normalizedScope,
+                createdById: currentUser.id,
+                createdByName: currentUser.name || 'Admin',
+                updatedAt: new Date().toISOString()
+            };
+            return this.db.put('work_plans', workPlan);
+        });
+
+        const saved = await Promise.all(writePromises);
+        if (!options.skipCacheInvalidation) this.invalidateCarryForwardCache();
         return saved;
     }
 
@@ -450,8 +464,10 @@ export class Calendar {
 
         // Create if not exists
         if (!workPlan) {
-            const allUsers = await this.db.getAll('users');
-            const targetUser = allUsers.find(u => u.id === userId);
+            const currentUser = AppAuth.getUser();
+            const targetUser = userId === currentUser?.id
+                ? currentUser
+                : await this.db.get('users', userId);
             if (!targetUser) throw new Error("Target user not found");
 
             workPlan = {

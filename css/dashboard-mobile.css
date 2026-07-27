@@ -13,6 +13,9 @@
 
 /* Hero card — let content drive height, remove !important clamp */
 [data-viewport="mobile"] .dashboard-hero-card {
+  width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
   height: auto !important;
   min-height: auto !important;
   max-height: none !important;
@@ -68,14 +71,16 @@
 
 @media (min-width: 768px) {
   /* Primary row — 2-column grid */
-  .dashboard-modern .dashboard-primary-row {
+  .dashboard-staff-view .dashboard-primary-row,
+.dashboard-admin-view .dashboard-primary-row {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1rem;
   }
 
   /* Restore hero card fixed height from main.css */
-  .dashboard-modern .dashboard-hero-card {
+  .dashboard-staff-view .dashboard-hero-card,
+.dashboard-admin-view .dashboard-hero-card {
     height: clamp(72px, 4.7vw, 82px) !important;
     min-height: clamp(72px, 4.7vw, 82px) !important;
     max-height: 82px !important;
@@ -114,12 +119,14 @@
 
 @media (min-width: 1024px) {
   /* Primary row — 3-column grid */
-  .dashboard-modern .dashboard-primary-row {
+  .dashboard-staff-view .dashboard-primary-row,
+.dashboard-admin-view .dashboard-primary-row {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   /* Restore dashboard grid gap */
-  .dashboard-modern .dashboard-grid {
+  .dashboard-staff-view .dashboard-grid,
+.dashboard-admin-view .dashboard-grid {
     gap: 0.75rem;
   }
 

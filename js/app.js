@@ -2,6 +2,12 @@ import { AppConfig } from './config.js';
 import './modules/auth.js';
 import './modules/db.js';
 import './modules/attendance.js';
+import './modules/permissions.js';
+import { APP_UNALLOCATED_BUDGET_HEAD } from './modules/budget-heads.js';
+import './modules/budget-heads.js';
+import './modules/system-dialog.js';
+import { escapeHtml as app_escapeHtml, escapeJsSingleQuote as app_escapeJsSingleQuote, escapeDialogHtml } from './utils/html-escape.js';
+import { getLocalISO } from './utils/date-helpers.js';
 import AppUI from './ui.js';
 import './modules/calendar.js';
 import './modules/activity.js';
@@ -20,6 +26,9 @@ import './modules/admin-policies.js';
 import './modules/day-plan.js';
 import './modules/widget.js';
 import './ui/site-announcement.js';
+
+// Local aliases so legacy bare references inside this file keep working.
+const app_normalizeBudgetHeadId = window.app_normalizeBudgetHeadId;
 
 // ── Global async-button helper ────────────────────────────────
 window.app_asyncButton = function(btn) {
@@ -109,105 +118,7 @@ const LOCATION_STALE_FALLBACK_TIME = 600000; // 10 minutes fallback when live lo
 const CHECKOUT_LOCATION_FRESH_MS = 120000; // Reuse GPS captured during the checkout modal for 2 minutes
 let checkoutLocationSession = null;
 window.app_annualYear = new Date().getFullYear();
-const APP_UNALLOCATED_BUDGET_HEAD = Object.freeze({
-    id: 'UNALLOCATED',
-    code: 'UNALLOCATED',
-    name: 'Unallocated / To Be Mapped',
-    status: 'active',
-    system: true
-});
 
-const app_normalizeBudgetHeadId = (value) => {
-    const raw = String(value || '').trim();
-    return raw || APP_UNALLOCATED_BUDGET_HEAD.id;
-};
-
-window.app_getActiveBudgetHeads = async function () {
-    const rows = await window.AppDB.getAll('budget_heads').catch(() => []);
-    const normalized = Array.isArray(rows) ? rows
-        .filter((row) => String(row?.status || 'active').toLowerCase() !== 'inactive')
-        .map((row) => ({
-            id: String(row.id || row.code || '').trim(),
-            code: String(row.code || row.id || '').trim(),
-            name: String(row.name || row.code || row.id || '').trim(),
-            status: String(row.status || 'active').toLowerCase(),
-            parentId: String(row.parentId || '').trim()
-        }))
-        .filter((row) => !!row.id) : [];
-    const hasUnallocated = normalized.some((row) => row.id === APP_UNALLOCATED_BUDGET_HEAD.id);
-    if (!hasUnallocated) normalized.unshift({ ...APP_UNALLOCATED_BUDGET_HEAD });
-    const byParent = new Map();
-    normalized.forEach((row) => {
-        const parentKey = row.parentId || '';
-        if (!byParent.has(parentKey)) byParent.set(parentKey, []);
-        byParent.get(parentKey).push(row);
-    });
-    byParent.forEach((list) => list.sort((a, b) => String(a.code || a.id).localeCompare(String(b.code || b.id))));
-    const ordered = [];
-    const visit = (parentId, depth, trail = new Set()) => {
-        const children = byParent.get(parentId) || [];
-        for (const child of children) {
-            const childId = String(child.id || '');
-            if (!childId || trail.has(childId)) continue;
-            ordered.push({ ...child, depth });
-            const nextTrail = new Set(trail);
-            nextTrail.add(childId);
-            visit(childId, depth + 1, nextTrail);
-        }
-    };
-    visit('', 0);
-    // Include orphans with invalid parent links.
-    normalized.forEach((row) => {
-        if (!ordered.some((x) => x.id === row.id)) {
-            ordered.push({ ...row, depth: 0 });
-        }
-    });
-    return ordered;
-};
-
-window.app_ensureBudgetHeadCatalog = async function () {
-    const existing = await window.AppDB.get('budget_heads', APP_UNALLOCATED_BUDGET_HEAD.id).catch(() => null);
-    if (!existing) {
-        await window.AppDB.put('budget_heads', {
-            ...APP_UNALLOCATED_BUDGET_HEAD,
-            owner: 'system',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-        }).catch(() => null);
-    }
-};
-
-window.app_getBudgetHeadLabel = async function (budgetHeadId) {
-    const normalizedId = app_normalizeBudgetHeadId(budgetHeadId);
-    if (normalizedId === APP_UNALLOCATED_BUDGET_HEAD.id) return APP_UNALLOCATED_BUDGET_HEAD.name;
-    const row = await window.AppDB.get('budget_heads', normalizedId).catch(() => null);
-    return row?.name || row?.code || normalizedId;
-};
-
-window.app_renderBudgetHeadOptions = function (selectedId = '') {
-    const heads = Array.isArray(window.app_budgetHeadsCache) ? window.app_budgetHeadsCache : [APP_UNALLOCATED_BUDGET_HEAD];
-    const selected = app_normalizeBudgetHeadId(selectedId);
-    const sortedHeads = [...heads].sort((a, b) => {
-        if (String(a?.id || '') === APP_UNALLOCATED_BUDGET_HEAD.id) return -1;
-        if (String(b?.id || '') === APP_UNALLOCATED_BUDGET_HEAD.id) return 1;
-        const aLabel = `${String(a?.code || a?.id || '')} ${String(a?.name || '')}`.trim();
-        const bLabel = `${String(b?.code || b?.id || '')} ${String(b?.name || '')}`.trim();
-        return aLabel.localeCompare(bLabel, undefined, { numeric: true, sensitivity: 'base' });
-    });
-    return sortedHeads.map((head) => {
-        const id = String(head.id || '');
-        const depth = Number(head.depth || 0);
-        const indent = depth > 0 ? `${'  '.repeat(depth)}↳ ` : '';
-        const label = `${indent}${String(head.code || id)} - ${String(head.name || id)}`;
-        return `<option value="${id}" ${id === selected ? 'selected' : ''}>${label}</option>`;
-    }).join('');
-};
-
-window.app_refreshBudgetHeadsCache = async function () {
-    await window.app_ensureBudgetHeadCatalog();
-    window.app_budgetHeadsCache = await window.app_getActiveBudgetHeads();
-    return window.app_budgetHeadsCache;
-};
 
 const getStoredSeenReleaseId = () => {
     try {
@@ -468,67 +379,7 @@ window.app_checkForSystemUpdate = async () => {
     return hasUpdate;
 };
 
-window.app_isAdminUser = (user = window.AppAuth?.getUser()) => {
-    if (!user) return false;
-    // ONLY the boolean flag determines global admin status
-    return user.isAdmin === true;
-};
 
-window.app_canSeeAdminPanel = (user = window.AppAuth?.getUser()) => {
-    if (!user) return false;
-    if (window.app_isAdminUser(user)) return true;
-    // If they have ANY specific admin level permission, they can enter the admin panel
-    if (user.permissions) {
-        return Object.entries(user.permissions).some(([module, level]) => !['birthday', 'letterPad'].includes(module) && level === 'admin');
-    }
-    return false;
-};
-
-window.app_hasPerm = (module, level = 'view', user = window.AppAuth?.getUser()) => {
-    if (!user) return false;
-    // Global admin has all permissions
-    if (user.isAdmin === true) return true;
-    if (!user.permissions || !user.permissions[module]) return false;
-
-    const perm = user.permissions[module];
-    if (level === 'view') return perm === 'view' || perm === 'admin';
-    if (level === 'admin') return perm === 'admin';
-    return false;
-};
-
-window.app_canAccessLetterPad = (user = window.AppAuth?.getUser()) => {
-    if (!user) return false;
-    const perm = user.permissions?.letterPad;
-    return perm === 'view' || perm === 'admin';
-};
-
-window.app_canManageAttendanceSheet = (user = window.AppAuth?.getUser()) => {
-    if (!user) return false;
-    return window.app_hasPerm('attendance', 'admin', user) || !!user.canManageAttendanceSheet;
-};
-
-window.app_canAccessStaffAiMemory = (user = window.AppAuth?.getUser()) => {
-    if (!user) return false;
-    return window.app_isAdminUser(user)
-        || window.app_hasPerm('users', 'admin', user)
-        || !!user.canAccessStaffAiMemory;
-};
-
-window.app_canManageBirthdays = (user = window.AppAuth?.getUser()) => {
-    if (!user) return false;
-    return window.app_isAdminUser(user)
-        || user.role === 'Administrator'
-        || !!user.canManageBirthdays
-        || window.app_hasPerm('birthday', 'view', user);
-};
-
-window.app_canAdminBirthdays = (user = window.AppAuth?.getUser()) => {
-    if (!user) return false;
-    return window.app_isAdminUser(user)
-        || user.role === 'Administrator'
-        || !!user.canManageBirthdays
-        || window.app_hasPerm('birthday', 'admin', user);
-};
 
 window.app_getReadTelemetry = () => {
     if (!window.AppDB || !window.AppDB.getReadTelemetry) return {};
@@ -918,10 +769,6 @@ function registerSW() {
 }
 
 // --- UI Helpers ---
-const getLocalISO = (date = new Date()) => {
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-};
-
 window.app_showAttendanceNotice = (message) => {
     if (!message) return;
     const host = document.getElementById('page-content');
@@ -2145,19 +1992,6 @@ window.app_findCarryForwardIssues = async function () {
     }
 };
 
-const escapeDialogHtml = (value) => {
-    return String(value ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-};
-
-const renderDialogMessage = (message) => {
-    return escapeDialogHtml(message).replace(/\n/g, '<br>');
-};
-
 const toSafeNotifStatus = (notif) => String(notif?.status || 'pending').toLowerCase();
 const isPendingNotif = (notif) => {
     if (notif?.type === 'birthday-reminder') {
@@ -3321,111 +3155,7 @@ window.app_maybeOpenBirthdayPopup = async () => {
     window.app_showModal(html, 'birthday-reminder-modal');
 };
 
-window.app_systemDialog = function ({
-    title = 'Notice',
-    message = '',
-    mode = 'alert',
-    defaultValue = '',
-    confirmText = 'OK',
-    cancelText = 'Cancel',
-    placeholder = ''
-} = {}) {
-    return new Promise((resolve) => {
-        const modalId = `system-dialog-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        const inputId = `${modalId}-input`;
-        const isPrompt = mode === 'prompt';
-        const isConfirm = mode === 'confirm' || mode === 'prompt';
-        const html = `
-                <div class="modal-overlay app-system-dialog-overlay" id="${modalId}" style="display:flex;">
-                    <div class="modal-content app-system-dialog">
-                        <div class="app-system-dialog-head">
-                            <h3>${escapeDialogHtml(title)}</h3>
-                            <button type="button" class="app-system-dialog-close" aria-label="Close dialog">&times;</button>
-                        </div>
-                        <div class="app-system-dialog-body">
-                            <p>${renderDialogMessage(message)}</p>
-                            ${isPrompt ? `<input id="${inputId}" class="app-system-dialog-input" type="text" value="${escapeDialogHtml(defaultValue)}" placeholder="${escapeDialogHtml(placeholder)}" autocomplete="off">` : ''}
-                        </div>
-                        <div class="app-system-dialog-actions">
-                            ${isConfirm ? `<button type="button" class="action-btn secondary app-system-dialog-cancel">${escapeDialogHtml(cancelText)}</button>` : ''}
-                            <button type="button" class="action-btn app-system-dialog-confirm">${escapeDialogHtml(confirmText)}</button>
-                        </div>
-                    </div>
-                </div>
-            `;
 
-        // Mount system dialogs at top-level body so they always appear above active screens.
-        (document.body || document.getElementById('modal-container')).insertAdjacentHTML('beforeend', html);
-
-        const modalEl = document.getElementById(modalId);
-        if (!modalEl) {
-            resolve(isPrompt ? null : false);
-            return;
-        }
-        modalEl.style.zIndex = '20000';
-        const confirmBtn = modalEl.querySelector('.app-system-dialog-confirm');
-        const cancelBtn = modalEl.querySelector('.app-system-dialog-cancel');
-        const closeBtn = modalEl.querySelector('.app-system-dialog-close');
-        const inputEl = isPrompt ? modalEl.querySelector(`#${inputId}`) : null;
-
-        const cleanup = (result) => {
-            modalEl.remove();
-            resolve(result);
-        };
-
-        confirmBtn?.addEventListener('click', () => {
-            cleanup(isPrompt ? (inputEl ? inputEl.value : '') : true);
-        });
-        cancelBtn?.addEventListener('click', () => cleanup(isPrompt ? null : false));
-        closeBtn?.addEventListener('click', () => cleanup(isPrompt ? null : false));
-        modalEl.addEventListener('click', (ev) => {
-            if (ev.target === modalEl) cleanup(isPrompt ? null : false);
-        });
-        modalEl.addEventListener('keydown', (ev) => {
-            if (ev.key === 'Escape') cleanup(isPrompt ? null : false);
-            if (ev.key === 'Enter') {
-                ev.preventDefault();
-                cleanup(isPrompt ? (inputEl ? inputEl.value : '') : true);
-            }
-        });
-
-        if (inputEl) {
-            inputEl.focus();
-            inputEl.select();
-        } else {
-            confirmBtn?.focus();
-        }
-    });
-};
-
-window.appAlert = (message, title = 'Notice') => window.app_systemDialog({ title, message, mode: 'alert', confirmText: 'OK' });
-window.appConfirm = (message, title = 'Please Confirm') => window.app_systemDialog({ title, message, mode: 'confirm', confirmText: 'Confirm', cancelText: 'Cancel' });
-window.appPrompt = (message, defaultValue = '', opts = {}) => window.app_systemDialog({
-    title: opts.title || 'Enter Details',
-    message,
-    mode: 'prompt',
-    defaultValue,
-    confirmText: opts.confirmText || 'Save',
-    cancelText: opts.cancelText || 'Cancel',
-    placeholder: opts.placeholder || ''
-});
-
-window.app_requestMandatoryRejectionReason = async function ({
-    title = 'Reject Item',
-    message = 'Please enter the rejection reason.',
-    confirmText = 'Submit Reason'
-} = {}) {
-    while (true) {
-        const reason = await window.appPrompt(message, '', { title, confirmText });
-        if (reason === null) return null;
-        const trimmed = String(reason || '').trim();
-        if (trimmed) return trimmed;
-        await window.appAlert('A rejection reason is required to continue.', 'Reason Required');
-    }
-};
-window.alert = (message) => {
-    window.appAlert(message);
-};
 
 // Initialize Global App Logic
 // --- Yearly Plan / Calendar Logic ---
@@ -4174,6 +3904,21 @@ window.getLocation = function getLocation(options = {}) {
             const allowStaleFallback = !(options && options.allowStaleFallback === false);
             const host = (window.location && window.location.hostname) ? window.location.hostname : '';
             const isLocalhost = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+
+            // Dev/test bypass: add ?skipGeo to the URL to skip geolocation.
+            // Used by Playwright tests that cannot provide GPS in headless Chrome.
+            // Only works on localhost for safety.
+            if (isLocalhost) {
+                const urlParams = new URLSearchParams(window.location.search);
+                if (urlParams.has('skipGeo')) {
+                    const fakePos = { lat: 19.076, lng: 72.8777 };
+                    cachedLocation = fakePos;
+                    lastLocationFetch = Date.now();
+                    console.log('getLocation: ?skipGeo detected, returning fake location');
+                    resolve(fakePos);
+                    return;
+                }
+            }
             if (!window.isSecureContext && !isLocalhost) {
                 reject('Location requires HTTPS on mobile. Open this app using an HTTPS URL and allow location access.');
                 return;
@@ -4542,14 +4287,7 @@ const app_resolveTargetUserId = (targetUserId, currentUserId) => {
     return raw;
 };
 
-const app_escapeHtml = (value) => String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 
-const app_escapeJsSingleQuote = (value) => String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
 const app_normalizeIsoDate = (value) => {
     const raw = String(value || '').trim();
@@ -5809,27 +5547,19 @@ window.app_deleteDayPlan = async (date, targetUserId = null, planScope = null) =
         if (window.AppStore && window.AppStore.invalidatePlans) {
             window.AppStore.invalidatePlans(); // CACHE INVALIDATION
         }
-        alert("Plan deleted!");
         document.getElementById('day-plan-modal')?.remove();
-
-        // Refresh current view (section-aware, lighter than full dashboard)
-        const contentArea = document.getElementById('page-content');
-        if (contentArea) {
-            const hash = window.location.hash || '';
-            const sectionPrefix = 'dashboard-section/';
-            if (hash.startsWith(`#${sectionPrefix}`)) {
-                const section = hash.slice(sectionPrefix.length + 1).trim() || 'worklog';
-                contentArea.innerHTML = await AppUI.renderDashboardSectionPage(section);
-                if (window.initDashboardSectionPage) window.initDashboardSectionPage();
-            } else {
-                contentArea.innerHTML = await AppUI.renderDashboard();
-                if (window.setupDashboardEvents) window.setupDashboardEvents();
-            }
+        if (window.app_showSyncToast) {
+            window.app_showSyncToast('Plan deleted!');
+        } else {
+            alert('Plan deleted!');
         }
     } catch (err) {
-        alert(err.message);
-    } finally {
-        restore();
+        console.error('Delete day plan failed:', err);
+        if (window.app_showSyncToast) {
+            window.app_showSyncToast('Failed to delete plan: ' + err.message);
+        } else {
+            alert(err.message);
+        }
     }
 };
 
@@ -5942,64 +5672,77 @@ window.app_saveDayPlan = async (e, date, targetUserId = null) => {
         return;
     }
 
+    let skipSave = false;
     try {
         if (plans.length === 0) {
-            if (hadPersonal) {
-                await window.AppCalendar.deleteWorkPlan(date, targetId, { planScope: 'personal' });
-            }
-            if (hadAnnual) {
-                await window.AppCalendar.deleteWorkPlan(date, targetId, { planScope: 'annual' });
-            }
             if (!hadPersonal && !hadAnnual) {
                 alert("Please add at least one task.");
                 restore();
                 return;
             }
+            // No tasks to save. Delete existing plans once then skip to the UI refresh.
+            const deletions = [];
+            if (hadPersonal) deletions.push(window.AppCalendar.deleteWorkPlan(date, targetId, { planScope: 'personal' }));
+            if (hadAnnual) deletions.push(window.AppCalendar.deleteWorkPlan(date, targetId, { planScope: 'annual' }));
+            await Promise.all(deletions);
+            // Skip the setWorkPlan / deleteWorkPlan branches below and go straight to refresh.
+            skipSave = true;
+            // (fall through to refresh, not re-delete)
         }
 
-        if (personalPlans.length > 0) {
-            await window.AppCalendar.setWorkPlan(date, personalPlans, targetId, { planScope: 'personal' });
-            planIdsByScope.personal = window.AppCalendar.getWorkPlanId(date, targetId, 'personal');
-        } else if (hadPersonal) {
-            await window.AppCalendar.deleteWorkPlan(date, targetId, { planScope: 'personal' });
-        }
+        if (!skipSave) {
+            // Batch personal + annual writes into a single parallel Firestore call
+            const activeScopes = [];
+            if (personalPlans.length > 0) activeScopes.push('personal');
+            if (annualPlans.length > 0) activeScopes.push('annual');
 
-        if (annualPlans.length > 0) {
-            await window.AppCalendar.setWorkPlan(date, annualPlans, targetId, { planScope: 'annual' });
-            planIdsByScope.annual = window.AppCalendar.getWorkPlanId(date, targetId, 'annual');
-        } else if (hadAnnual) {
-            await window.AppCalendar.deleteWorkPlan(date, targetId, { planScope: 'annual' });
-        }
+            if (activeScopes.length > 0) {
+                // Merge both plan arrays so the single call writes all tasks
+                const mergedPlans = [...personalPlans, ...annualPlans];
+                await window.AppCalendar.setWorkPlan(date, mergedPlans, targetId, {
+                    planScope: activeScopes,
+                    skipCacheInvalidation: true  // we handle it once below
+                });
+            }
 
-        if (window.AppStore && window.AppStore.invalidatePlans) {
-            window.AppStore.invalidatePlans(); // CACHE INVALIDATION
-        }
+            // Delete scopes that had plans before but now have none
+            if (hadPersonal && personalPlans.length === 0) {
+                await window.AppCalendar.deleteWorkPlan(date, targetId, { planScope: 'personal' });
+            }
+            if (hadAnnual && annualPlans.length === 0) {
+                await window.AppCalendar.deleteWorkPlan(date, targetId, { planScope: 'annual' });
+            }
 
-        // Show success and close modal immediately — rest runs in background
-        alert("Plans saved successfully!");
-        document.getElementById('day-plan-modal')?.remove();
-
-        // Refresh current view (section-aware, lighter than full dashboard)
-        const contentArea = document.getElementById('page-content');
-        if (contentArea) {
-            const hash = window.location.hash || '';
-            const sectionPrefix = 'dashboard-section/';
-            if (hash.startsWith(`#${sectionPrefix}`)) {
-                const section = hash.slice(sectionPrefix.length + 1).trim() || 'worklog';
-                contentArea.innerHTML = await AppUI.renderDashboardSectionPage(section);
-                if (window.initDashboardSectionPage) window.initDashboardSectionPage();
-            } else {
-                contentArea.innerHTML = await AppUI.renderDashboard();
-                if (window.setupDashboardEvents) window.setupDashboardEvents();
+            // Cache invalidation — once, at the top level
+            if (window.AppCalendar && window.AppCalendar.invalidateCarryForwardCache) {
+                window.AppCalendar.invalidateCarryForwardCache();
             }
         }
 
+        if (window.AppStore && window.AppStore.invalidatePlans) {
+            window.AppStore.invalidatePlans();
+        }
+
+        // Build planIdsByScope for the background notification code below
+        if (personalPlans.length > 0) {
+            planIdsByScope.personal = window.AppCalendar.getWorkPlanId(date, targetId, 'personal');
+        }
+        if (annualPlans.length > 0) {
+            planIdsByScope.annual = window.AppCalendar.getWorkPlanId(date, targetId, 'annual');
+        }
+
+        // Close modal and show non-blocking success toast — no more alert()
+        document.getElementById('day-plan-modal')?.remove();
+        if (window.app_showSyncToast) {
+            window.app_showSyncToast("Plans saved successfully!");
+        }
+
                 // ── Background: notifications and tagged tasks ────────────────
-        window.AppDB.getAll('users').then(allUsers => {
-            const bg = async () => {
+        (async () => {
+            try {
                 // Notify the owner if edited by an admin
                 if (targetId !== currentUser.id && (currentUser.role === 'Administrator' || currentUser.isAdmin)) {
-                    const owner = allUsers.find(u => u.id === targetId);
+                    const owner = await window.AppDB.get('users', targetId).catch(() => null);
                     if (owner) {
                         if (!owner.notifications) owner.notifications = [];
                         const lastNotif = owner.notifications[owner.notifications.length - 1];
@@ -6025,7 +5768,7 @@ window.app_saveDayPlan = async (e, date, targetUserId = null) => {
                     const notificationPromises = [];
                     for (const uid of distinctTaggedUsers) {
                         if (uid === currentUser.id) continue;
-                        const targetUser = allUsers.find(u => u.id === uid);
+                        const targetUser = await window.AppDB.get('users', uid).catch(() => null);
                         if (!targetUser) continue;
                         if (!targetUser.notifications) targetUser.notifications = [];
                         plans.forEach((p, idx) => {
@@ -6069,7 +5812,7 @@ window.app_saveDayPlan = async (e, date, targetUserId = null) => {
                         if (!p.tags) continue;
                         for (const t of p.tags) {
                             if (t.id === targetId) continue;
-                            const recipient = allUsers.find(u => u.id === t.id);
+                            const recipient = await window.AppDB.get('users', t.id).catch(() => null);
                             if (!recipient || !window.AppCalendar) continue;
                             const scopeKey = p.planScope === 'annual' ? 'annual' : 'personal';
                             const scopedPlanId = planIdsByScope[scopeKey] || window.AppCalendar.getWorkPlanId(date, targetId, scopeKey);
@@ -6084,11 +5827,17 @@ window.app_saveDayPlan = async (e, date, targetUserId = null) => {
                     }
                     if (tagTaskPromises.length > 0) await Promise.all(tagTaskPromises);
                 }
-            };
-            bg().catch(err => console.warn('Background plan notifications failed:', err));
-        }).catch(err => console.warn('Failed to fetch users for plan notifications:', err));
+            } catch (err) {
+                console.warn('Background plan notifications failed:', err);
+            }
+        })();
     } catch (err) {
-        alert(err.message);
+        console.error('Save day plan failed:', err);
+        if (window.app_showSyncToast) {
+            window.app_showSyncToast('Failed to save plans: ' + err.message);
+        } else {
+            alert(err.message);
+        }
     } finally {
         restore();
     }
@@ -8244,6 +7993,9 @@ function setupDashboardEvents() {
     }
     if (window.app_attachStatsCardHandlers) {
         window.app_attachStatsCardHandlers();
+    }
+    if (AppUI.initDashboardLayout) {
+        AppUI.initDashboardLayout();
     }
 }
 window.setupDashboardEvents = setupDashboardEvents;
@@ -11025,13 +10777,16 @@ window.app_viewTaskDetails = async function (planId, taskIndex) {
                         </div>
                         
                         <div style="display: flex; gap: 0.5rem;">
-                            <button onclick="document.getElementById('task-details-modal').remove()" class="action-btn" style="flex: 1;">Close</button>
+                            <button type="button" class="action-btn" style="flex: 1;" onclick="this.closest('.modal-overlay').remove()">Close</button>
                         </div>
                     </div>
                 </div>
             `;
 
-        document.getElementById('modal-container').innerHTML = modalHTML;
+        const mc = document.getElementById('modal-container');
+        if (mc && !document.getElementById('task-details-modal')) {
+            mc.insertAdjacentHTML('beforeend', modalHTML);
+        }
     } catch (err) {
         console.error('Failed to view task details:', err);
         alert('Failed to load task details.');

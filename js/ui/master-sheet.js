@@ -233,7 +233,7 @@ export async function renderMasterSheet(month = null, year = null) {
     };
 
     return `
-        <div class="dashboard-grid dashboard-modern dashboard-admin-view">
+        <div class="dashboard-grid dashboard-admin-view">
             <div class="card full-width">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
                     <div>

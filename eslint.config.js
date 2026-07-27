@@ -51,5 +51,23 @@ module.exports = [
       "eqeqeq": ["error", "always", { "null": "ignore" }],
       "no-redeclare": "error"
     }
+  },
+  {
+    files: ["tests/**/*.mjs"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      globals: {
+        ...globals.node,
+        ...globals.browser
+      }
+    },
+    rules: {
+      ...js.configs.recommended.rules,
+      "no-undef": "error",
+      "no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+      "eqeqeq": ["error", "always", { "null": "ignore" }],
+      "no-redeclare": "error"
+    }
   }
 ];

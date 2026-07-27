@@ -9,17 +9,25 @@ import { renderYearlyPlan } from './team-schedule.js';
 import { AppJourneyReflection } from '../modules/journey-reflection.js';
 import { renderJourneyReflectionCard } from './journey-reflection.js';
 import { AppConfig } from '../config.js';
+import {
+  DASHBOARD_CARD_MODE_TILE,
+  DASHBOARD_CARD_MODE_ORIGINAL,
+  DASHBOARD_CARD_MODE_FULLSCREEN,
+  DASHBOARD_CARD_MODES,
+  DASHBOARD_CARD_CONTROL_EXCLUDED_CLASSES,
+  DASHBOARD_MAX_OVERLAY_ID,
+  DASHBOARD_MAX_TITLE_ID,
+  DASHBOARD_MAX_BODY_ID,
+  DASHBOARD_MAX_RENDER_DELAY_MS,
+  closeDashboardCardMaxOverlay,
+  openDashboardCardMaxOverlay,
+  getDashboardCardElementById,
+  setDashboardCardModeClass,
+  applyDashboardCardMode
+} from './dashboard-card-mode.js';
+import { onAction } from '../utils/action-router.js';
 
 const escapeJsSingleQuote = (value) => String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-const DASHBOARD_MAX_OVERLAY_ID = 'dashboard-card-max-overlay';
-const DASHBOARD_MAX_TITLE_ID = 'dashboard-card-max-title';
-const DASHBOARD_MAX_BODY_ID = 'dashboard-card-max-body';
-const DASHBOARD_CARD_MODE_TILE = 'tile';
-const DASHBOARD_CARD_MODE_ORIGINAL = 'original';
-const DASHBOARD_CARD_MODE_FULLSCREEN = 'fullscreen';
-const DASHBOARD_CARD_MODES = new Set([DASHBOARD_CARD_MODE_TILE, DASHBOARD_CARD_MODE_ORIGINAL, DASHBOARD_CARD_MODE_FULLSCREEN]);
-const DASHBOARD_CARD_CONTROL_EXCLUDED_CLASSES = ['dashboard-hero-card', 'dashboard-journey-card'];
-const DASHBOARD_MAX_RENDER_DELAY_MS = 0;
 const WORKLOG_PAGE_SIZE = 25;
 const DASHBOARD_IST_TIME_ZONE = 'Asia/Kolkata';
 const DASHBOARD_WORK_PLAN_STATUS_PRIORITY = {
@@ -155,16 +163,16 @@ const renderPlannedTaskItem = (row, index, currentUserId, isAdmin) => {
                 </div>
             </div>
             <div class="dashboard-planned-task-actions">
-                <button type="button" class="dashboard-planned-task-btn edit" onclick="window.app_editDashboardActivity?.('plan','','${actionDate}','${actionUserId}','')">
+                <button type="button" class="dashboard-planned-task-btn edit" data-ts-action="edit-task" data-date="${actionDate}" data-user-id="${actionUserId}">
                     <i class="fa-solid fa-pen-to-square"></i><span>Edit</span>
                 </button>
                 ${canPostpone ? `
-                    <button type="button" class="dashboard-planned-task-btn postpone" data-plan-id="${actionPlanId}" data-task-index="${actionTaskIndex}" data-plan-scope="${safeHtml(row.planScope || 'personal')}" data-user-id="${actionUserId}" data-date="${actionDate}" onclick="window.app_teamActivitiesPostponeTask?.(this)">
+                    <button type="button" class="dashboard-planned-task-btn postpone" data-ts-action="postpone-task" data-plan-id="${actionPlanId}" data-task-index="${actionTaskIndex}" data-plan-scope="${safeHtml(row.planScope || 'personal')}" data-user-id="${actionUserId}" data-date="${actionDate}">
                         <i class="fa-solid fa-clock"></i><span>Postpone</span>
                     </button>
                 ` : ''}
                 ${canComplete ? `
-                    <button type="button" class="dashboard-planned-task-btn complete" data-plan-id="${actionPlanId}" data-task-index="${actionTaskIndex}" data-user-id="${actionUserId}" onclick="window.app_teamActivitiesCompleteTask?.(this)">
+                    <button type="button" class="dashboard-planned-task-btn complete" data-ts-action="complete-task" data-plan-id="${actionPlanId}" data-task-index="${actionTaskIndex}" data-user-id="${actionUserId}">
                         <i class="fa-solid fa-check"></i><span>Complete</span>
                     </button>
                 ` : ''}
@@ -183,6 +191,25 @@ const ensurePlannedTaskInteractions = () => {
             if (item !== exceptEl) item.classList.remove('is-action-open');
         });
     };
+
+    // Register dashboard actions with shared router (once).
+    if (!window._dashboardActionRegistered) {
+        window._dashboardActionRegistered = true;
+        onAction('edit-task', (el) => window.app_editDashboardActivity?.('plan', '', el.dataset.date || '', el.dataset.userId || '', ''));
+        onAction('postpone-task', (el) => window.app_teamActivitiesPostponeTask?.(el));
+        onAction('complete-task', (el) => window.app_teamActivitiesCompleteTask?.(el));
+        onAction('refresh-hero', (el, e) => window.app_forceRefreshHero?.(e));
+        onAction('close-modal', (el) => {
+            const id = el.dataset.modalId;
+            if (id) document.getElementById(id)?.remove();
+        });
+        onAction('confirm-postpone', (el) => window.app_confirmHeroPostponeTask?.(el.dataset.planId || '', Number(el.dataset.taskIndex), el.dataset.userId || '', el.dataset.bucketKey || ''));
+        onAction('undo-leave', (el) => {
+            const id = el.dataset.leaveId || '';
+            if (id) window.app_undoLeaveDecision?.(id);
+        });
+        onAction('close-maximize', () => window.app_closeDashboardCardMaximize?.());
+    }
 
     document.addEventListener('click', (event) => {
         const actionBtn = event.target?.closest?.('.dashboard-planned-task-btn');
@@ -239,12 +266,6 @@ export function renderPlannedTasksCard(workPlans, targetStaff = null, options = 
             <div class="dashboard-worklog-head dashboard-planned-task-head">
                 <div class="dashboard-planned-task-head-copy">
                     <h4>${safeHtml(title)} <span class="dashboard-worklog-staff">(${safeHtml(targetStaffName)})</span></h4>
-                    <span>${safeHtml(subtitle)}</span>
-                </div>
-                <div class="dashboard-planned-task-summary">
-                    <span class="dashboard-planned-task-chip">Total <strong>${total}</strong></span>
-                    <span class="dashboard-planned-task-chip">Open <strong>${Math.max(0, open)}</strong></span>
-                    <span class="dashboard-planned-task-chip">Done <strong>${completed}</strong></span>
                 </div>
             </div>
             <div class="${safeHtml(listClass)}">
@@ -255,157 +276,6 @@ export function renderPlannedTasksCard(workPlans, targetStaff = null, options = 
         </div>
     `;
 }
-
-const ensureDashboardMaxOverlay = () => {
-    let overlay = document.getElementById(DASHBOARD_MAX_OVERLAY_ID);
-    if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.id = DASHBOARD_MAX_OVERLAY_ID;
-        overlay.className = 'dashboard-max-overlay';
-        overlay.innerHTML = `
-            <div class="dashboard-max-window" role="dialog" aria-modal="true" aria-labelledby="${DASHBOARD_MAX_TITLE_ID}">
-                <div class="dashboard-max-header">
-                    <h2 id="${DASHBOARD_MAX_TITLE_ID}"></h2>
-                    <button type="button" class="dashboard-max-close" onclick="window.app_closeDashboardCardMaximize?.()" aria-label="Close maximized card">
-                        <i class="fa-solid fa-xmark"></i>
-                    </button>
-                </div>
-                <div id="${DASHBOARD_MAX_BODY_ID}" class="dashboard-max-body"></div>
-            </div>
-        `;
-        overlay.addEventListener('click', (event) => {
-            if (event.target === overlay) window.app_closeDashboardCardMaximize?.();
-        });
-        document.body.appendChild(overlay);
-    }
-    return overlay;
-};
-
-const setDashboardBodyScrollLock = (locked) => {
-    if (!document?.body) return;
-    document.body.classList.toggle('dashboard-max-open', !!locked);
-};
-
-const closeDashboardMaxOverlay = () => {
-    const closingCardId = window._dashboardMaxCardId ? String(window._dashboardMaxCardId) : '';
-    window._dashboardMaxRenderToken = 0;
-    const overlay = document.getElementById(DASHBOARD_MAX_OVERLAY_ID);
-    if (overlay) {
-        overlay.classList.remove('open');
-        overlay.remove();
-    }
-    const body = document.getElementById(DASHBOARD_MAX_BODY_ID);
-    if (body) body.innerHTML = '';
-    setDashboardBodyScrollLock(false);
-    if (document?.body) document.body.style.overflow = '';
-    const trigger = window._dashboardMaxTriggerEl;
-    window._dashboardMaxTriggerEl = null;
-    window._dashboardMaxCardId = null;
-    if (closingCardId) {
-        const cardEl = getDashboardCardElementById(closingCardId);
-        if (cardEl) {
-            setDashboardCardModeClass(cardEl, DASHBOARD_CARD_MODE_TILE);
-            cardEl.dataset.dashboardCardMode = DASHBOARD_CARD_MODE_TILE;
-        }
-        if (window._dashboardCardModeState) {
-            window._dashboardCardModeState[closingCardId] = DASHBOARD_CARD_MODE_TILE;
-        }
-    }
-    if (trigger && typeof trigger.focus === 'function') {
-        try { trigger.focus(); } catch { /* ignore */ }
-    }
-};
-
-const openDashboardMaxOverlay = (cardId, triggerEl = null) => {
-    closeDashboardMaxOverlay();
-    const template = (window._dashboardCardTemplates || {})[cardId];
-    if (!template) return;
-    const overlay = ensureDashboardMaxOverlay();
-    const title = document.getElementById(DASHBOARD_MAX_TITLE_ID);
-    const body = document.getElementById(DASHBOARD_MAX_BODY_ID);
-    if (!title || !body) return;
-    const renderToken = Date.now() + Math.random();
-    title.textContent = template.title || 'Dashboard Card';
-    body.innerHTML = `
-        <div class="dashboard-max-shell">
-            <div class="dashboard-max-loading">
-                <span class="dashboard-max-loading-dot"></span>
-                <span class="dashboard-max-loading-dot"></span>
-                <span class="dashboard-max-loading-dot"></span>
-            </div>
-        </div>
-    `;
-    window._dashboardMaxTriggerEl = triggerEl;
-    window._dashboardMaxCardId = cardId;
-    window._dashboardMaxRenderToken = renderToken;
-    setDashboardBodyScrollLock(true);
-    overlay.classList.add('open');
-    const closeBtn = overlay.querySelector('.dashboard-max-close');
-    if (closeBtn) {
-        try { closeBtn.focus(); } catch { /* ignore */ }
-    }
-    markPerf(`dashboard:max:${cardId}:shell`);
-    const renderBody = () => {
-        if (window._dashboardMaxRenderToken !== renderToken) return;
-        const currentBody = document.getElementById(DASHBOARD_MAX_BODY_ID);
-        if (!currentBody) return;
-        const html = template.expandedHtml || template.originalHtml || template.tileHtml || '';
-        currentBody.innerHTML = `<div class="dashboard-max-card-content">${html}</div>`;
-        if (cardId === 'hero-week') updateHeroExpandedOverlay();
-        markPerf(`dashboard:max:${cardId}:content`);
-        measurePerf(`dashboard:max:${cardId}`, `dashboard:max:${cardId}:shell`, `dashboard:max:${cardId}:content`);
-    };
-    if (typeof window.requestAnimationFrame === 'function') {
-        window.requestAnimationFrame(() => {
-            if (DASHBOARD_MAX_RENDER_DELAY_MS > 0) {
-                setTimeout(renderBody, DASHBOARD_MAX_RENDER_DELAY_MS);
-            } else {
-                renderBody();
-            }
-        });
-    } else {
-        setTimeout(renderBody, DASHBOARD_MAX_RENDER_DELAY_MS);
-    }
-};
-
-const getDashboardCardElementById = (cardId) => {
-    if (!cardId) return null;
-    return document.querySelector(`.dashboard-staff-view .card[data-dashboard-card-id="${cardId}"]`);
-};
-
-const setDashboardCardModeClass = (cardEl, mode) => {
-    if (!cardEl) return;
-    cardEl.classList.remove('dashboard-card-mode-tile', 'dashboard-card-mode-original');
-    if (mode === DASHBOARD_CARD_MODE_ORIGINAL) {
-        cardEl.classList.add('dashboard-card-mode-original');
-        if (cardEl.dataset.dashboardOriginalFullWidth === '1') {
-            cardEl.classList.add('full-width');
-        }
-    } else {
-        cardEl.classList.add('dashboard-card-mode-tile');
-        cardEl.classList.remove('full-width');
-    }
-};
-
-const applyDashboardCardMode = (cardId, mode, triggerEl = null) => {
-    if (!DASHBOARD_CARD_MODES.has(mode)) return;
-    const cards = document.querySelectorAll('.dashboard-staff-view .card[data-dashboard-card-id]');
-    if (!cards.length) return;
-    cards.forEach((card) => {
-        const isTarget = card.dataset.dashboardCardId === String(cardId);
-        const nextMode = isTarget ? mode : DASHBOARD_CARD_MODE_TILE;
-        setDashboardCardModeClass(card, nextMode);
-        card.dataset.dashboardCardMode = nextMode;
-    });
-    window._dashboardCardModeState = window._dashboardCardModeState || {};
-    window._dashboardCardModeState[cardId] = mode;
-    window._dashboardActiveCardModeId = cardId;
-    if (mode === DASHBOARD_CARD_MODE_FULLSCREEN) {
-        openDashboardMaxOverlay(cardId, triggerEl || getDashboardCardElementById(cardId));
-    } else {
-        closeDashboardMaxOverlay();
-    }
-};
 
 const getDashboardCardTitle = (cardEl) => {
     if (cardEl.classList.contains('dashboard-hero-stats-card')) return 'Hero of the Week';
@@ -530,6 +400,7 @@ const updateHeroExpandedOverlay = () => {
     if (!body) return;
     body.innerHTML = `<div class="dashboard-max-card-content">${renderHeroExpandedAuditMarkup()}</div>`;
 };
+window.app_updateHeroExpandedOverlay = updateHeroExpandedOverlay;
 
 const createDashboardModeButton = (cardId, title, mode) => {
     const btn = document.createElement('button');
@@ -865,13 +736,13 @@ export function renderHeroCard(heroData, heroMeta = {}) {
         const MAX_REFRESHES = 3;
         if (refreshCount >= MAX_REFRESHES) {
             refreshButtonHTML = `
-                <button class="hero-refresh-btn" disabled title="Max daily refreshes (${MAX_REFRESHES}) reached" style="background:none; border:none; color:#cbd5e1; cursor:not-allowed; padding:4px;">
+                <button class="hero-refresh-btn" disabled title="Max daily refreshes (${MAX_REFRESHES}) reached">
                     <i class="fa-solid fa-arrows-rotate"></i>
                 </button>`;
         } else {
             const remaining = MAX_REFRESHES - refreshCount;
             refreshButtonHTML = `
-                <button class="hero-refresh-btn" onclick="window.app_forceRefreshHero(event)" title="Recalculate and refresh hero (${remaining} refresh${remaining === 1 ? '' : 'es'} remaining today)" style="background:none; border:none; color:#3b82f6; cursor:pointer; padding:4px; transition: transform 0.2s;" onmouseover="this.style.transform='rotate(45deg)'" onmouseout="this.style.transform='none'">
+                <button class="hero-refresh-btn" data-ts-action="refresh-hero" title="Recalculate and refresh hero (${remaining} refresh${remaining === 1 ? '' : 'es'} remaining today)">
                     <i class="fa-solid fa-arrows-rotate"></i>
                 </button>`;
         }
@@ -884,9 +755,9 @@ export function renderHeroCard(heroData, heroMeta = {}) {
         const chipText = heroState === 'fetch_error' ? 'Fetch Error' : 'No Eligible Data';
         return `
             <div class="card dashboard-hero-stats-card hero-slot">
-                <div class="dashboard-hero-stats-head" style="display:flex; justify-content:space-between; align-items:center;">
+                <div class="dashboard-hero-stats-head">
                     <div class="hero-label-badge">Hero of the Week</div>
-                    <div style="display:flex; align-items:center; gap:0.5rem;">
+                    <div class="dashboard-hero-stats-head-right">
                         ${heroMeta.generatedAt ? `<span class="hero-sync-time" title="Source: ${heroMeta.source || heroData?.source || 'unknown'}">Synced ${timeAgo(heroMeta.generatedAt)}</span>` : ''}
                         ${refreshButtonHTML}
                     </div>
@@ -919,9 +790,9 @@ export function renderHeroCard(heroData, heroMeta = {}) {
 
     return `
         <div class="card dashboard-hero-stats-card hero-slot ${isNew ? 'is-new-summary' : ''}">
-            <div class="dashboard-hero-stats-head" style="display:flex; justify-content:space-between; align-items:center;">
+            <div class="dashboard-hero-stats-head">
                 <div class="hero-label-badge">Hero of the Week</div>
-                <div style="display:flex; align-items:center; gap:0.5rem;">
+                <div class="dashboard-hero-stats-head-right">
                     ${heroMeta.generatedAt ? `<span class="hero-sync-time" title="Source: ${heroMeta.source || heroData?.source || 'unknown'}">Synced ${timeAgo(heroMeta.generatedAt)}</span>` : ''}
                     ${refreshButtonHTML}
                 </div>
@@ -962,10 +833,10 @@ export function renderHeroCard(heroData, heroMeta = {}) {
                     <span class="hero-attendance-pill">Factor <strong>x${attendanceFactor.toFixed(2)}</strong></span>
                 </div>
             </div>
-            <div class="dashboard-hero-stats-foot" style="position: relative;">
+            <div class="dashboard-hero-stats-foot">
                 <span class="dashboard-kpi-tag">${safeHtml(periodLabel)}</span>
                 <span class="dashboard-kpi-tag">Confidence ${confidencePct}%</span>
-                <span style="position: absolute; bottom: 4px; right: 8px; font-size: 0.65rem; color: #94a3b8; opacity: 0.7;" title="Hero Calculation Algorithm Version">v5</span>
+                <span class="hero-version-badge" title="Hero Calculation Algorithm Version">v5</span>
             </div>
         </div>`;
 }
@@ -1086,7 +957,8 @@ export function renderActivityList(allLogs, startStr, endStr, targetStaffId, col
                     ${editButton}
                 </div>`;
         }
-        html += `<div class="dashboard-activity-item ${collabClass}" style="border-left-color:${borderColor};"><div class="dashboard-activity-desc">${safeHtml(log._displayDesc)}</div>${progressMeta}${statusBadge}<div class="dashboard-activity-meta">${safeHtml(log.checkOut || (log.status === 'completed' ? 'Completed' : 'Planned Activity'))}</div></div>`;
+        const itemBorder = log._isCollab ? 'collab' : (log._isMinute ? 'minute' : 'default');
+        html += `<div class="dashboard-activity-item ${collabClass}" data-activity-type="${itemBorder}"><div class="dashboard-activity-desc">${safeHtml(log._displayDesc)}</div>${progressMeta}${statusBadge}<div class="dashboard-activity-meta">${safeHtml(log.checkOut || (log.status === 'completed' ? 'Completed' : 'Planned Activity'))}</div></div>`;
     });
     const hasMore = visibleLimit < merged.length;
     if (hasMore) {
@@ -1507,9 +1379,9 @@ export function renderBreakdown(breakdown) {
         if (count === 0 && !['Present', 'Late', 'Absent', 'Early Departure'].includes(key)) return '';
 
         return `
-            <div class="dashboard-breakdown-item" style="background:${style.bg};">
-                <span class="dashboard-breakdown-count" style="color:${style.color}">${count}</span>
-                <span class="dashboard-breakdown-label" style="color:${style.color};">${style.label}</span>
+            <div class="dashboard-breakdown-item" data-breakdown-key="${safeHtml(key)}">
+                <span class="dashboard-breakdown-count">${count}</span>
+                <span class="dashboard-breakdown-label">${style.label}</span>
             </div>
          `;
     }).join('');
@@ -1793,9 +1665,9 @@ export function renderLeaveHistory(leaves, options = {}) {
                             <div class="dashboard-leave-history-date">${l.startDate} to ${l.endDate}${l.adminComment ? ` • ${safeHtml(l.adminComment)}` : ''}</div>
                         </div>
                         <div class="dashboard-leave-history-status">
-                            <span class="status-pill" style="background: ${statusColor(l.status)}15; color: ${statusColor(l.status)}">${safeHtml(l.status)}</span>
+                            <span class="status-pill" data-status="${safeHtml(l.status)}">${safeHtml(l.status)}</span>
                             ${canUndo && ['Approved', 'Rejected'].includes(String(l.status || '')) ? `
-                                <button type="button" class="dashboard-tagged-btn" style="margin-top:0.45rem;" onclick="window.app_undoLeaveDecision('${safeHtml(l.id)}')">Undo</button>
+                                <button type="button" class="dashboard-tagged-btn" data-ts-action="undo-leave" data-leave-id="${safeHtml(l.id)}">Undo</button>
                             ` : ''}
                         </div>
                     </div>
@@ -2250,7 +2122,9 @@ export async function renderDashboard() {
             </div>`;
     }
 
-    let summaryHTML = '';
+    let detailSectionHTML = '';
+    let statsRowHTML = '';
+    const primaryRowThirdCard = renderActivityLog(staffActivities);
     const renderYearlyPlanHTML = renderYearlyPlan(calendarPlans);
     if (canViewAdminSections) {
         const hasExplicitSelection = !!window.app_selectedSummaryStaffId && window.app_selectedSummaryStaffId !== user.id;
@@ -2274,30 +2148,33 @@ export async function renderDashboard() {
             canUndo: true
         });
 
-        summaryHTML = `
-                                ${journeyReflectionHTML}
-                    ${renderLeaveRequests(pendingLeaves, workFromHomeRows)}
-                    ${renderMissedCheckoutRequests(missedCheckoutRequests)}
-                    ${historyHTML}
-                    ${renderYearlyPlanHTML}
-                    <div class="dashboard-hero-missed-corner-wrap">${overdueTaskStripHTML}</div>
-                    ${heroHTML}
-            <div class="dashboard-stats-row">
+        detailSectionHTML = `
+                    <div class="dashboard-detail-section" data-zone-id="detailSection">
+                        ${renderLeaveRequests(pendingLeaves, workFromHomeRows)}
+                        ${renderMissedCheckoutRequests(missedCheckoutRequests)}
+                        ${historyHTML}
+                        ${heroHTML}
+                        ${primaryRowThirdCard}
+                        ${journeyReflectionHTML}
+                    </div>`;
+        statsRowHTML = `
+            <div class="dashboard-stats-row" data-zone-id="statsRow">
                 ${renderStatsCard(isViewingSelf ? monthlyStats.label : `${monthlyStats.label} - ${targetStaff?.name || 'Staff'}`, isViewingSelf ? 'Monthly Stats' : 'Viewing Staff Monthly Stats', monthlyStats, 'monthly')}
                 ${renderStatsCard('Yearly Summary', isViewingSelf ? yearlyStats.label : `${yearlyStats.label} for ${targetStaff?.name || 'Staff'}`, yearlyStats, 'yearly')}
             </div>`;
     } else {
-        summaryHTML = `
-                                ${journeyReflectionHTML}
-                    ${renderActivityLog(staffActivities)}
-                    <div class="dashboard-hero-missed-corner-wrap">${overdueTaskStripHTML}</div>
-                    ${heroHTML}
-            <div class="dashboard-stats-row">
+        detailSectionHTML = `
+                    <div class="dashboard-detail-section" data-zone-id="detailSection">
+                        ${heroHTML}
+                        ${primaryRowThirdCard}
+                        ${journeyReflectionHTML}
+                    </div>`;
+        statsRowHTML = `
+            <div class="dashboard-stats-row" data-zone-id="statsRow">
                 ${renderStatsCard(monthlyStats.label, 'Monthly Stats', monthlyStats, 'monthly')}
                 ${renderStatsCard('Yearly Summary', yearlyStats.label, yearlyStats, 'yearly')}
             </div>`;
     }
-    const primaryRowThirdCard = isAdmin ? renderActivityLog(staffActivities) : renderYearlyPlanHTML;
 
     const updateState = (window.app_getReleaseUpdateState && window.app_getReleaseUpdateState()) || { active: false };
     setTimeout(() => ensureDashboardActionDelegates(), 0);
@@ -2317,21 +2194,39 @@ export async function renderDashboard() {
     measurePerf('dashboard:render', 'dashboard:render:start', 'dashboard:render:end');
 
     const viewportMode = typeof window !== 'undefined' && window.innerWidth < 768 ? 'mobile' : 'desktop';
+    const todayDateStr = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     return `
-        <div class="dashboard-grid dashboard-modern dashboard-staff-view" data-viewport="${viewportMode}">
+        <div class="dashboard-grid dashboard-staff-view modern-dashboard" data-viewport="${viewportMode}">
             ${notifHTML}
             ${taggedHTML}
             ${staffViewBannerHTML}
+
+            <!-- ── Modern Welcome Header ── -->
+            <div class="modern-dashboard-header full-width">
+                <div class="modern-header-content">
+                    <div>
+                        <div class="modern-header-greeting">Welcome back, ${user.name.split(' ')[0]}</div>
+                        <h2 class="modern-header-title">Attendance Command Center</h2>
+                    </div>
+                    <div class="modern-header-meta">
+                        <div class="modern-header-date">${todayDateStr}</div>
+                        <button class="${updateState.active ? 'dashboard-refresh-link is-update-pending' : 'dashboard-refresh-link'}" onclick="window.app_checkForSystemUpdate()" title="${updateState.active ? 'Update available. Click to refresh into the new version.' : 'Check for System Update'}">
+                            ${updateState.active ? 'System update available' : 'Check for System Update'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Hero Card (full width) ── -->
             <div class="card full-width dashboard-hero-card">
                 <div class="dashboard-hero-orb dashboard-hero-orb-top"></div>
                 <div class="dashboard-hero-orb dashboard-hero-orb-bottom"></div>
                 <div class="dashboard-hero-content">
                     <div class="dashboard-hero-row">
                         <div class="dashboard-hero-copy">
-                            <div class="dashboard-hero-eyebrow">Executive Overview</div>
-                            <h2 class="dashboard-hero-title">Welcome back, ${user.name.split(' ')[0]}!</h2>
-                            <p class="dashboard-hero-date">${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-                            ${user.rating !== undefined ? `<div class="dashboard-hero-chip-row"><div class="dashboard-hero-chip"><span class="dashboard-hero-chip-label">Your Rating:</span>${renderStarRating(user.rating, true)}</div>${user.completionStats ? `<div class="dashboard-hero-chip"><i class="fa-solid fa-check-circle dashboard-hero-chip-icon"></i><span>${(user.completionStats.completionRate * 100).toFixed(0)}% Complete</span></div>` : ''}</div>` : ''}
+                            ${isAdmin ? `<div class="dashboard-hero-eyebrow">Executive Overview</div>` : ''}
+                            <h2 class="dashboard-hero-title">${todayDateStr}</h2>
+                            ${isAdmin && user.rating !== undefined ? `<div class="dashboard-hero-chip-row"><div class="dashboard-hero-chip"><span class="dashboard-hero-chip-label">Your Rating:</span>${renderStarRating(user.rating, true)}</div>${user.completionStats ? `<div class="dashboard-hero-chip"><i class="fa-solid fa-check-circle dashboard-hero-chip-icon"></i><span>${(user.completionStats.completionRate * 100).toFixed(0)}% Complete</span></div>` : ''}</div>` : ''}
                         </div>
                         <div class="dashboard-hero-aside">
                             ${isAdmin ? `<div class="dashboard-viewing-box"><div class="dashboard-viewing-inner"><i class="fa-solid fa-users-viewfinder dashboard-viewing-icon"></i><div class="dashboard-viewing-meta"><div class="dashboard-viewing-head"><div class="dashboard-viewing-label">Viewing Summary For</div>${targetStaffId !== user.id ? '<span class="dashboard-viewing-state">STAFF VIEW ACTIVE</span>' : ''}</div><select onchange="window.app_changeSummaryStaff(this.value)" class="dashboard-viewing-select"><option value="${user.id}">My Own Summary</option><optgroup label="Staff Members">${(allUsers || []).filter(u => u.id !== user.id).sort((a, b) => a.name.localeCompare(b.name)).map(u => `<option value="${u.id}" ${u.id === targetStaffId ? 'selected' : ''}>${u.name}</option>`).join('')}</optgroup></select></div></div></div>` : ''}
@@ -2341,51 +2236,62 @@ export async function renderDashboard() {
                         </div>
                     </div>
                 </div>
-                <button class="${updateState.active ? 'dashboard-refresh-link is-update-pending' : 'dashboard-refresh-link'}" onclick="window.app_checkForSystemUpdate()" title="${updateState.active ? 'Update available. Click to refresh into the new version.' : 'Check for System Update'}">
-                    ${updateState.active ? 'System update available' : 'Check for System Update'}
-                </button>
             </div>
-            <div class="dashboard-primary-row">
-                <div class="card check-in-widget dashboard-primary-card dashboard-checkin-card">
-                    <div class="dashboard-checkin-head">
-                        <div class="dashboard-checkin-avatar-wrap">
-                            <img src="${safeUrl(displayUser.avatar)}" alt="Profile" class="dashboard-checkin-avatar">
-                            <div class="dashboard-checkin-status-dot" style="background: ${isCheckedIn ? '#10b981' : '#94a3b8'};"></div>
+
+            ${overdueTaskStripHTML ? `<div class="dashboard-hero-missed-corner-wrap">${overdueTaskStripHTML}</div>` : ''}
+
+            <!-- ── Bento Grid Layout ── -->
+            <div class="modern-bento-grid">
+                <!-- Left Column (main content) -->
+                <div class="modern-bento-main">
+                    <div class="dashboard-primary-row" data-zone-id="primaryRow">
+                        <div class="card check-in-widget dashboard-primary-card dashboard-checkin-card">
+                            <div class="dashboard-checkin-head">
+                                <div class="dashboard-checkin-avatar-wrap">
+                                    <img src="${safeUrl(displayUser.avatar)}" alt="Profile" class="dashboard-checkin-avatar">
+                                    <div class="dashboard-checkin-status-dot" data-checked-in="${isCheckedIn ? 'true' : 'false'}"></div>
+                                </div>
+                                <div class="dashboard-checkin-identity">
+                                <h4 class="dashboard-checkin-name">${safeHtml(displayUser.name)}</h4>
+                                <p class="text-muted dashboard-checkin-role">${safeHtml(displayUser.role)}</p>
+                                </div>
+                            </div>
+                            <div class="dashboard-checkin-timer-wrap">
+                                <div class="timer-display dashboard-checkin-timer" id="timer-display">${timerHTML}</div>
+                                <div id="timer-label" class="dashboard-checkin-timer-label">Elapsed Time Today</div>
+                            </div>
+                            <div id="countdown-container" class="dashboard-checkin-countdown">
+                                <div class="dashboard-checkin-countdown-meta"><span id="countdown-label">Time to checkout</span><span id="countdown-value" class="dashboard-checkin-countdown-value">--:--:--</span></div>
+                                <div class="dashboard-checkin-countdown-bar"><div id="countdown-progress" class="dashboard-checkin-countdown-progress"></div></div>
+                            </div>
+                            <div id="overtime-container" class="dashboard-checkin-overtime">
+                                <div class="dashboard-checkin-overtime-label">OVERTIME</div>
+                                <div id="overtime-value" class="dashboard-checkin-overtime-value">00:00:00</div>
+                            </div>
+                            <div class="dashboard-checkin-action-row">
+                                <button class="${btnClass} dashboard-checkin-btn" id="attendance-btn" ${isReadOnlyView ? 'disabled' : ''} title="${isReadOnlyView ? 'View only' : ''}">${btnText} <i class="fa-solid fa-fingerprint"></i></button>
+                                ${pauseBtnHtml}
+                            </div>
+                            <div class="location-text dashboard-checkin-location" id="location-text"><i class="fa-solid fa-location-dot"></i><span>${isCheckedIn && displayUser.currentLocation ? `Lat: ${Number(displayUser.currentLocation.lat).toFixed(4)}, Lng: ${Number(displayUser.currentLocation.lng).toFixed(4)}` : 'Waiting for location...'}</span></div>
                         </div>
-                        <div class="dashboard-checkin-identity">
-                            <div class="dashboard-checkin-kicker">Attendance command center</div>
-                            <h4 class="dashboard-checkin-name">${safeHtml(displayUser.name)}</h4>
-                            <p class="text-muted dashboard-checkin-role">${safeHtml(displayUser.role)}</p>
-                        </div>
+                        <div class="dashboard-primary-col">${renderYearlyPlanHTML}</div>
+                        <div class="dashboard-primary-col ${!isViewingSelf ? 'dashboard-primary-col-highlight' : ''}">${renderWorkLog(currentWeekWorkPlans, collaborations, targetStaff, minutesData, {
+                            title: "Today's Planned Tasks",
+                            subtitle: `For ${todayStr}`,
+                            from: todayStr,
+                            to: todayStr,
+                            emptyMessage: 'No planned tasks for today.'
+                        })}</div>
                     </div>
-                    <div class="dashboard-checkin-timer-wrap">
-                        <div class="timer-display dashboard-checkin-timer" id="timer-display">${timerHTML}</div>
-                        <div id="timer-label" class="dashboard-checkin-timer-label">Elapsed Time Today</div>
-                    </div>
-                    <div id="countdown-container" class="dashboard-checkin-countdown">
-                        <div class="dashboard-checkin-countdown-meta"><span id="countdown-label">Time to checkout</span><span id="countdown-value" class="dashboard-checkin-countdown-value">--:--:--</span></div>
-                        <div class="dashboard-checkin-countdown-bar"><div id="countdown-progress" class="dashboard-checkin-countdown-progress"></div></div>
-                    </div>
-                    <div id="overtime-container" class="dashboard-checkin-overtime">
-                        <div class="dashboard-checkin-overtime-label">OVERTIME</div>
-                        <div id="overtime-value" class="dashboard-checkin-overtime-value">00:00:00</div>
-                    </div>
-                    <div class="dashboard-checkin-action-row">
-                        <button class="${btnClass} dashboard-checkin-btn" id="attendance-btn" ${isReadOnlyView ? 'disabled' : ''} title="${isReadOnlyView ? 'View only' : ''}">${btnText} <i class="fa-solid fa-fingerprint"></i></button>
-                        ${pauseBtnHtml}
-                    </div>
-                    <div class="location-text dashboard-checkin-location" id="location-text"><i class="fa-solid fa-location-dot"></i><span>${isCheckedIn && displayUser.currentLocation ? `Lat: ${Number(displayUser.currentLocation.lat).toFixed(4)}, Lng: ${Number(displayUser.currentLocation.lng).toFixed(4)}` : 'Waiting for location...'}</span></div>
+
+                    ${detailSectionHTML}
                 </div>
-                <div class="dashboard-primary-col ${!isViewingSelf ? 'dashboard-primary-col-highlight' : ''}">${renderWorkLog(currentWeekWorkPlans, collaborations, targetStaff, minutesData, {
-                    title: "Today's Planned Tasks",
-                    subtitle: `For ${todayStr}`,
-                    from: todayStr,
-                    to: todayStr,
-                    emptyMessage: 'No planned tasks for today.'
-                })}</div>
-                <div class="dashboard-primary-col">${primaryRowThirdCard}</div>
+
+                <!-- Right Column (sidebar) -->
+                <div class="modern-bento-sidebar">
+                    ${statsRowHTML}
+                </div>
             </div>
-            ${summaryHTML}
         </div>`;
 }
 
@@ -2696,8 +2602,8 @@ if (typeof window !== 'undefined') {
         window.__dashboardMaxEscHandlerBound = true;
     }
 
-    window.app_closeDashboardCardFullscreen = closeDashboardMaxOverlay;
-    window.app_closeDashboardCardMaximize = closeDashboardMaxOverlay;
+    window.app_closeDashboardCardFullscreen = closeDashboardCardMaxOverlay;
+    window.app_closeDashboardCardMaximize = closeDashboardCardMaxOverlay;
     window.app_toggleDashboardCardMode = (cardId, mode = DASHBOARD_CARD_MODE_TILE, triggerEl = null) => {
         if (!cardId) return;
         const safeMode = DASHBOARD_CARD_MODES.has(mode) ? mode : DASHBOARD_CARD_MODE_TILE;
@@ -2716,7 +2622,7 @@ if (typeof window !== 'undefined') {
             return;
         }
         if (safeMode === DASHBOARD_CARD_MODE_FULLSCREEN && window._dashboardMaxCardId === cardId) {
-            closeDashboardMaxOverlay();
+            closeDashboardCardMaxOverlay();
             applyDashboardCardMode(cardId, DASHBOARD_CARD_MODE_TILE);
             return;
         }
@@ -2982,17 +2888,17 @@ if (typeof window !== 'undefined') {
         document.getElementById(modalId)?.remove();
         const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
         const html = `
-            <div class="modal-overlay" id="${modalId}" style="display:flex;">
-                <div class="modal-content" style="max-width:420px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem;">
-                        <h3 style="margin:0; font-size:1.05rem;">Postpone Task</h3>
-                        <button type="button" onclick="document.getElementById('${modalId}')?.remove()" style="background:none; border:none; font-size:1.1rem; cursor:pointer;">&times;</button>
+            <div class="modal-overlay" id="${modalId}">
+                <div class="modal-content postpone-modal-content">
+                    <div class="postpone-modal-head">
+                        <h3>Postpone Task</h3>
+                        <button type="button" class="postpone-modal-close" data-ts-action="close-modal" data-modal-id="${modalId}">&times;</button>
                     </div>
-                    <label for="hero-postpone-date-input" style="display:block; margin-bottom:0.35rem; font-size:0.85rem; color:#475569; font-weight:600;">Select date</label>
-                    <input id="hero-postpone-date-input" type="date" value="${tomorrow}" style="width:100%; padding:0.6rem; border:1px solid #d1d5db; border-radius:8px;">
-                    <div style="display:flex; justify-content:flex-end; gap:0.5rem; margin-top:1rem;">
-                        <button type="button" class="action-btn secondary" onclick="document.getElementById('${modalId}')?.remove()" style="padding:0.55rem 0.9rem;">Cancel</button>
-                        <button type="button" class="action-btn" onclick="window.app_confirmHeroPostponeTask('${escapeJsSingleQuote(String(planId || ''))}', ${Number(taskIndex)}, '${escapeJsSingleQuote(String(userId || ''))}', '${escapeJsSingleQuote(String(bucketKey || ''))}')" style="padding:0.55rem 0.9rem;">Confirm</button>
+                    <label for="hero-postpone-date-input" class="postpone-modal-label">Select date</label>
+                    <input id="hero-postpone-date-input" type="date" value="${tomorrow}" class="postpone-modal-input">
+                    <div class="postpone-modal-actions">
+                        <button type="button" class="action-btn secondary" data-ts-action="close-modal" data-modal-id="${modalId}">Cancel</button>
+                        <button type="button" class="action-btn" data-ts-action="confirm-postpone" data-plan-id="${escapeJsSingleQuote(String(planId || ''))}" data-task-index="${Number(taskIndex)}" data-user-id="${escapeJsSingleQuote(String(userId || ''))}" data-bucket-key="${escapeJsSingleQuote(String(bucketKey || ''))}">Confirm</button>
                     </div>
                 </div>
             </div>`;

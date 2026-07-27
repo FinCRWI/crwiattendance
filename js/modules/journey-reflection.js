@@ -216,24 +216,17 @@ const resolveDashboardTargetUserId = (user) => {
 async function loadAllReflections() {
     const localReflections = readLocalReflections();
     if (!AppDB?.getAll) return localReflections;
-    
+
     try {
-        // Try primary method: getAll without source restriction
-        let remoteReflections = await AppDB.getAll(JOURNEY_REFLECTION_COLLECTION, {
+        // Use getAll which works correctly for this collection
+        // (journey_reflections is in the Firestore rules allowlist).
+        // Avoid calling queryMany with empty filters — it's redundant and
+        // can trigger a "Missing or insufficient permissions" error
+        // in certain Firestore security rules evaluation contexts.
+        const remoteReflections = await AppDB.getAll(JOURNEY_REFLECTION_COLLECTION, {
             silentPermissionDenied: true
-        }).catch(() => null);
-        
-        // If primary fails, try with queryMany as fallback
-        if (!remoteReflections || remoteReflections.length === 0) {
-            if (AppDB?.queryMany) {
-                remoteReflections = await AppDB.queryMany(JOURNEY_REFLECTION_COLLECTION, [], {
-                    silentPermissionDenied: true
-                }).catch(() => []);
-            } else {
-                remoteReflections = [];
-            }
-        }
-        
+        }).catch(() => []);
+
         const merged = mergeReflectionRows(localReflections, remoteReflections || []);
         if (merged.length > 0) {
             console.log(`Journey reflections loaded: ${merged.length} total (${remoteReflections?.length || 0} remote, ${localReflections.length} local)`);
@@ -250,21 +243,21 @@ async function getReflectionDoc(userId, dateKey) {
     if (!AppDB?.get) return null;
     const localMatch = readLocalReflections().find((row) => row.id === docId) || null;
     try {
-        // Try primary: get with server source
-        let remote = await AppDB.get(JOURNEY_REFLECTION_COLLECTION, docId, {
+        // Try primary: get by constructed doc ID
+        const remote = await AppDB.get(JOURNEY_REFLECTION_COLLECTION, docId, {
             silentPermissionDenied: true
         }).catch(() => null);
-        
-        // If remote document doesn't exist, try querying by userId as fallback for legacy data
-        if (!remote && AppDB?.queryMany) {
-            const results = await AppDB.queryMany(JOURNEY_REFLECTION_COLLECTION, [
-                { field: 'userId', operator: '==', value: userId },
-                { field: 'date', operator: '==', value: dateKey }
-            ], { silentPermissionDenied: true }).catch(() => []);
-            remote = results?.[0] || null;
+
+        // Use the getManySignature approach for legacy data lookup.
+        // The doc ID pattern is deterministic (journey_{userId}_{dateKey}),
+        // so a direct get() is sufficient. The queryMany fallback is removed
+        // because it can trigger a spurious "Missing or insufficient permissions"
+        // error in Firestore security rules evaluation.
+        if (remote) {
+            return normalizeReflectionRow(remote);
         }
-        
-        return normalizeReflectionRow(remote) || localMatch;
+
+        return localMatch;
     } catch {
         return localMatch;
     }
@@ -457,35 +450,35 @@ function dismissJourneyReflectionReminder(userId, dateKey) {
 // Diagnostic function to check and recover old reflections
 async function diagnoseAndRecoverReflections(userId) {
     if (!userId) return { status: 'error', message: 'User ID required' };
-    
+
     try {
         console.log('🔍 Starting Journey Reflection diagnostic...');
-        
+
         // Check local storage
         const localData = readLocalReflections();
         const userLocalData = filterUserReflections(localData, userId);
         console.log(`📦 Local storage: ${userLocalData.length} reflections for user`);
-        
+
         // Check remote data
         if (!AppDB?.queryMany) {
             return { status: 'warning', message: 'Database not initialized' };
         }
-        
+
         const remoteAll = await AppDB.queryMany(JOURNEY_REFLECTION_COLLECTION, [], {
             silentPermissionDenied: true
         }).catch(() => []);
         console.log(`☁️  Remote total: ${remoteAll?.length || 0} reflections in collection`);
-        
+
         const userRemoteData = filterUserReflections(remoteAll, userId);
         console.log(`☁️  Remote user-specific: ${userRemoteData.length} reflections for user`);
-        
+
         // Merge and save to local storage
         const merged = mergeReflectionRows(userLocalData, userRemoteData);
         if (merged.length > userLocalData.length) {
             writeLocalReflectionStore(merged);
             console.log(`✅ Migrated ${merged.length - userLocalData.length} reflections to local storage`);
         }
-        
+
         return {
             status: 'success',
             localCount: userLocalData.length,

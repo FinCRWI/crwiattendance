@@ -14,3 +14,6 @@
 - For CRWI Attendance App dashboard: Yearly plan / team schedule calendar is very important and must be on the first/primary row of the dashboard. Confidence: 0.80
 - For CRWI Attendance App admin dashboard: Organize into two clear sections — Section 1 (top): admin's personal data/tasks + hero of the week + team activity, all with equal height and width; Section 2 (bottom): pending leaves + leave request history. Confidence: 0.70
 - When modifying existing dashboard widgets, preserve their original CSS classes and visual styling rather than replacing them with inline styles or custom markup. Confidence: 0.75
+
+# dashboard-resize
+- For CRWI Attendance App dashboard: Use corner drag handles for resizing widgets instead of preset size buttons (Compact/Standard/Expanded). Confidence: 0.65

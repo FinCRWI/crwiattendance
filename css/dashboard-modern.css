@@ -1,0 +1,2092 @@
+/* ============================================================
+   MODERN DASHBOARD — Bento Grid Design
+   Inspired by the modern attendance dashboard mockup
+   ============================================================ */
+
+/* ── Color & Design Tokens ──────────────────────────────── */
+/*
+ * The modern dashboard uses its own `--md-*` token namespace because it has a
+ * different visual identity (darker primary, bluer accents) from the base app
+ * palette in main.css (`--primary: #3f63a8`, `--secondary: #6fb14a`, etc.).
+ *
+ * Relationship to main.css tokens:
+ *   --md-primary          ≈  darker, cooler variant of --primary
+ *   --md-surface-white    ≡  --bg-card (#ffffff)
+ *   --md-text-muted       ≈  --text-muted (#6b7280 vs #6b7a90)
+ *   --md-success          ≡  #10b981 (standard green, overrides --success)
+ *   --md-warning          ≡  #f59e0b (standard amber, overrides --warning)
+ *
+ * Fallbacks use `var(--original-name, fallback-value)` so the modern
+ * dashboard works even if main.css isn't loaded.
+ */
+.modern-dashboard {
+  --md-primary: #091426;
+  --md-secondary: #0058be;
+  --md-secondary-container: #2170e4;
+  --md-surface: #f7f9fb;
+  --md-surface-white: #ffffff;
+  --md-surface-container: #eceef0;
+  --md-surface-container-low: #f2f4f6;
+  --md-surface-container-high: #e6e8ea;
+  --md-outline: #75777d;
+  --md-outline-variant: #c5c6cd;
+  --md-on-primary: #ffffff;
+  --md-on-primary-container: #8590a6;
+  --md-on-secondary: #ffffff;
+  --md-on-surface-variant: #45474c;
+  --md-on-surface: #191c1e;
+  --md-success: #10b981;
+  --md-warning: #f59e0b;
+  --md-danger: #ef4444;
+  --md-text-muted: #6b7280;
+
+  --md-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06);
+  --md-shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --md-shadow-lg: 0 8px 30px rgba(15, 23, 42, 0.12);
+  --md-shadow-xl: 0 12px 40px rgba(15, 23, 42, 0.16);
+
+  --md-radius-sm: 8px;
+  --md-radius-md: 12px;
+  --md-radius-lg: 16px;
+  --md-radius-xl: 20px;
+}
+
+/* ── CRITICAL: Override the global .dashboard-grid to prevent auto-fit stacking ── */
+.modern-dashboard.dashboard-grid {
+  display: block;
+  animation: none;
+  gap: 0;
+}
+
+/* ── Welcome Header ──────────────────────────────────────── */
+.modern-dashboard-header {
+  margin-bottom: 1rem;
+}
+
+.modern-dashboard-header .modern-header-content {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.modern-dashboard-header .modern-header-greeting {
+  font-family: 'Sora', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--md-secondary);
+  margin-bottom: 0.25rem;
+}
+
+.modern-dashboard-header .modern-header-title {
+  font-family: 'Manrope', sans-serif;
+  font-size: 1.75rem;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--md-primary);
+  margin: 0;
+}
+
+.modern-dashboard-header .modern-header-date {
+  font-size: 0.85rem;
+  color: var(--md-text-muted);
+  white-space: nowrap;
+}
+
+/* Meta block — date + update button side-by-side */
+.modern-dashboard-header .modern-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-shrink: 0;
+}
+
+.modern-dashboard-header .modern-header-meta .dashboard-refresh-link {
+  position: static;
+  z-index: auto;
+  font-size: 0.62rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  background: var(--md-surface-container);
+  color: var(--md-text-muted);
+  border: 1px solid var(--md-outline-variant);
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.modern-dashboard-header .modern-header-meta .dashboard-refresh-link:hover {
+  background: var(--md-surface-container-high);
+  color: var(--md-primary);
+}
+
+.modern-dashboard-header .modern-header-meta .dashboard-refresh-link.is-update-pending {
+  color: #fff7ed;
+  background: rgba(200, 146, 47, 0.22);
+  border-color: rgba(255, 214, 153, 0.34);
+  animation: dashboardUpdateBlink 1.2s ease-in-out infinite;
+}
+
+/* ── Bento Grid Layout ───────────────────────────────────── */
+.modern-dashboard .modern-bento-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  margin-top: 0.25rem;
+  align-items: start;
+}
+
+@media (min-width: 1024px) {
+  .modern-dashboard .modern-bento-grid {
+    grid-template-columns: 1fr 360px;
+  }
+}
+
+.modern-dashboard .modern-bento-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.modern-dashboard .modern-bento-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+/* ── Glass Card ──────────────────────────────────────────── */
+
+/* Style all dashboard cards with glass effect */
+.modern-dashboard .card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  border-radius: var(--md-radius-lg);
+  box-shadow: var(--md-shadow-sm);
+  transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1),
+              box-shadow 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.modern-dashboard .card:hover {
+  box-shadow: var(--md-shadow-md);
+}
+
+/* ── Hero Check-in Card ──────────────────────────────────── */
+.modern-dashboard .dashboard-hero-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f8faff 100%);
+  border: 1px solid rgba(59, 130, 246, 0.1);
+  padding: 0.85rem 1rem;
+  border-radius: var(--md-radius-lg);
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 0.4rem;
+}
+
+.modern-dashboard .dashboard-hero-card::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -20%;
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(0, 88, 190, 0.04) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.modern-dashboard .dashboard-hero-card .dashboard-hero-orb {
+  display: none;
+}
+
+.modern-dashboard .dashboard-hero-card .dashboard-hero-content {
+  padding: 0;
+}
+
+.modern-dashboard .dashboard-hero-card .dashboard-hero-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.modern-dashboard .dashboard-hero-card .dashboard-hero-copy {
+  flex: 1;
+}
+
+.modern-dashboard .dashboard-hero-card .dashboard-hero-eyebrow {
+  font-family: 'Sora', sans-serif;
+  font-size: 0.58rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--md-on-surface-variant);
+  margin-bottom: 0.15rem;
+}
+
+.modern-dashboard .dashboard-hero-card .dashboard-hero-title {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--md-primary);
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.modern-dashboard .dashboard-hero-card .dashboard-hero-chip-row {
+  margin-top: 0.3rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.modern-dashboard .dashboard-hero-card .dashboard-hero-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.12rem 0.38rem;
+  font-size: 0.6rem;
+  border-radius: 999px;
+  background: var(--md-surface-container);
+  border: 1px solid var(--md-outline-variant);
+  color: var(--md-on-surface);
+}
+
+.modern-dashboard .dashboard-hero-card .dashboard-hero-chip-label {
+  font-size: 0.52rem;
+  font-weight: 700;
+  color: var(--md-text-muted);
+  opacity: 1;
+}
+
+.modern-dashboard .dashboard-hero-card .dashboard-hero-chip-icon {
+  color: var(--md-secondary);
+  font-size: 0.55rem;
+}
+
+.modern-dashboard .dashboard-hero-card .dashboard-hero-date {
+  font-size: 0.82rem;
+  color: var(--md-text-muted);
+  margin: 0;
+}
+
+.modern-dashboard .dashboard-hero-card .dashboard-hero-aside {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.modern-dashboard .dashboard-hero-card .dashboard-hero-brand {
+  display: none;
+}
+
+/* Dashboard viewing box (admin staff selector) */
+.modern-dashboard .dashboard-hero-card .dashboard-viewing-box {
+  background: var(--md-surface-container-high);
+  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--md-radius-sm);
+  padding: 0.5rem 0.75rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.modern-dashboard .dashboard-hero-card .dashboard-viewing-box .dashboard-viewing-inner {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  gap: 0.4rem;
+}
+
+.modern-dashboard .dashboard-hero-card .dashboard-viewing-box .dashboard-viewing-icon {
+  color: var(--md-secondary);
+  font-size: 0.65rem;
+}
+
+.modern-dashboard .dashboard-hero-card .dashboard-viewing-box .dashboard-viewing-label {
+  font-size: 0.45rem;
+  color: var(--md-on-surface-variant);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.modern-dashboard .dashboard-hero-card .dashboard-viewing-box .dashboard-viewing-state {
+  font-size: 0.4rem;
+  color: #92400e;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  padding: 0.06rem 0.28rem;
+  border-radius: 999px;
+  font-weight: 800;
+}
+
+.modern-dashboard .dashboard-hero-card .dashboard-viewing-box .dashboard-viewing-select {
+  font-size: 0.78rem;
+  border: none;
+  background: transparent;
+  color: var(--md-primary);
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+  max-width: 180px;
+}
+
+/* ── Primary Row / Check-in + Work Log + Activity ──────────── */
+.modern-dashboard .dashboard-primary-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  align-items: stretch;
+}
+
+/* 2 columns at 640px+ (3 items → 3rd wraps to next row) */
+@media (min-width: 640px) {
+  .modern-dashboard .dashboard-primary-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* 3 columns at 1024px+ for perfect fit of 3 items */
+@media (min-width: 1024px) {
+  .modern-dashboard .dashboard-primary-row {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Primary column wrappers inside the grid — stretch to fill */
+.modern-dashboard .dashboard-primary-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.modern-dashboard .dashboard-primary-col > .card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.modern-dashboard .dashboard-primary-col > .card > *:last-child {
+  margin-top: auto;
+}
+
+.modern-dashboard .dashboard-primary-col-highlight {
+  position: relative;
+}
+
+.modern-dashboard .dashboard-primary-col-highlight::before {
+  content: 'Staff View';
+  position: absolute;
+  top: -6px;
+  right: 8px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--md-warning);
+  background: var(--md-surface-white);
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  z-index: 2;
+}
+
+/* Check-in Card */
+.modern-dashboard .dashboard-checkin-card {
+  background: linear-gradient(180deg, #ffffff 0%, #fafcff 100%);
+  border: 1px solid rgba(33, 112, 228, 0.15);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.modern-dashboard .dashboard-checkin-card::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--md-secondary), var(--md-secondary-container));
+  border-radius: 0 0 var(--md-radius-lg) var(--md-radius-lg);
+}
+
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-avatar-wrap {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-status-dot {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+}
+
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-status-dot[data-checked-in="true"] {
+  background: #10b981;
+}
+
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-status-dot[data-checked-in="false"] {
+  background: #94a3b8;
+}
+
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-kicker {
+  font-family: 'Sora', sans-serif;
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--md-text-muted);
+}
+
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--md-primary);
+  margin: 0;
+  line-height: 1.3;
+}
+
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-role {
+  font-size: 0.75rem;
+  margin: 0;
+}
+
+/* Timer display */
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-timer-wrap {
+  text-align: center;
+  margin-bottom: 0.5rem;
+  padding: 0.4rem 0;
+}
+
+.modern-dashboard .dashboard-checkin-card .timer-display {
+  font-size: 2.2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--md-primary);
+  letter-spacing: -1px;
+  line-height: 1.1;
+}
+
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-timer-label {
+  font-size: 0.7rem;
+  color: var(--md-text-muted);
+  font-weight: 500;
+}
+
+/* Check-in countdown & overtime */
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-countdown {
+  background: rgba(16, 185, 129, 0.06);
+  border: 1px solid rgba(16, 185, 129, 0.15);
+  border-radius: var(--md-radius-sm);
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-countdown-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.72rem;
+  color: var(--md-text-muted);
+  margin-bottom: 0.3rem;
+}
+
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-countdown-value {
+  font-weight: 700;
+  color: var(--md-primary);
+}
+
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-countdown-bar {
+  height: 3px;
+  background: var(--md-surface-container);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-countdown-progress {
+  height: 100%;
+  background: linear-gradient(90deg, var(--md-success), #059669);
+  border-radius: 99px;
+  transition: width 1s linear;
+}
+
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-overtime {
+  text-align: center;
+  margin-bottom: 0.75rem;
+}
+
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-overtime-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--md-warning);
+}
+
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-overtime-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--md-warning);
+}
+
+/* Check-in action buttons */
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-action-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1rem;
+  border-radius: var(--md-radius-sm);
+  font-size: 0.82rem;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.modern-dashboard .dashboard-checkin-card .action-btn {
+  background: linear-gradient(135deg, var(--md-secondary), var(--md-secondary-container));
+  color: white;
+  box-shadow: 0 4px 12px rgba(0, 88, 190, 0.25);
+}
+
+.modern-dashboard .dashboard-checkin-card .action-btn:hover {
+  box-shadow: 0 6px 16px rgba(0, 88, 190, 0.35);
+  transform: translateY(-1px);
+}
+
+.modern-dashboard .dashboard-checkin-card .action-btn.checkout {
+  background: linear-gradient(135deg, var(--md-danger), #dc2626);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
+}
+
+.modern-dashboard .dashboard-checkin-card .action-btn.secondary {
+  background: var(--md-surface-container-high);
+  color: var(--md-primary);
+  box-shadow: none;
+}
+
+/* Timer fills remaining space, pushing action row to bottom */
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-timer-wrap {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* Location text */
+.modern-dashboard .dashboard-checkin-card .dashboard-checkin-location {
+  font-size: 0.7rem;
+  color: var(--md-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding-top: 0.3rem;
+}
+
+/* ── Worklog / Planned Tasks Card ────────────────────────── */
+.modern-dashboard .dashboard-worklog-card {
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.modern-dashboard .dashboard-worklog-card .dashboard-worklog-head {
+  margin-bottom: 0.25rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.4);
+  flex-shrink: 0;
+}
+
+.modern-dashboard .dashboard-worklog-card .dashboard-worklog-head h4 {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--md-primary);
+  margin: 0;
+}
+
+.modern-dashboard .dashboard-plan-task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex: 1;
+}
+
+.modern-dashboard .dashboard-planned-task-item {
+  background: var(--md-surface-container-low);
+  border: 1px solid transparent;
+  border-radius: var(--md-radius-sm);
+  padding: 0.5rem 0.65rem;
+  transition: all 0.15s;
+  cursor: pointer;
+}
+
+.modern-dashboard .dashboard-planned-task-item:hover {
+  border-color: var(--md-outline-variant);
+  background: var(--md-surface-white);
+}
+
+.modern-dashboard .dashboard-planned-task-item .dashboard-planned-task-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--md-on-surface);
+  margin-bottom: 0.3rem;
+}
+
+.modern-dashboard .dashboard-planned-task-item .dashboard-planned-task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+/* ── Worklog Card — Inner elements (chips, status, head) ───── */
+.modern-dashboard .dashboard-planned-task-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.35rem;
+}
+
+.modern-dashboard .dashboard-planned-task-head-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.modern-dashboard .dashboard-planned-task-head-copy h4 {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--md-primary);
+  line-height: 1.2;
+}
+
+.modern-dashboard .dashboard-worklog-head span {
+  color: var(--md-text-muted);
+}
+
+.modern-dashboard .dashboard-worklog-staff {
+  color: var(--md-secondary);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.modern-dashboard .dashboard-planned-task-head-copy span:not(.dashboard-worklog-staff) {
+  font-size: 0.65rem;
+  color: var(--md-text-muted);
+  line-height: 1.15;
+}
+
+.modern-dashboard .dashboard-planned-task-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.15rem;
+  flex-shrink: 0;
+}
+
+.modern-dashboard .dashboard-planned-task-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: var(--md-surface-container);
+  border: 1px solid var(--md-outline-variant);
+  color: var(--md-on-surface);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.08;
+  white-space: nowrap;
+}
+
+.modern-dashboard .dashboard-planned-task-chip strong {
+  font-weight: 800;
+  color: var(--md-primary);
+}
+
+.modern-dashboard .dashboard-planned-task-chip.is-complete {
+  background: #ecfdf3;
+  border-color: #bbf7d0;
+  color: #166534;
+}
+
+.modern-dashboard .dashboard-planned-task-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.modern-dashboard .dashboard-planned-task-item .dashboard-planned-task-meta .status-badge {
+  font-size: 0.58rem;
+  padding: 0.11rem 0.28rem;
+  color: var(--md-on-surface);
+}
+
+.modern-dashboard .dashboard-planned-task-item .dashboard-planned-task-meta .status-badge i {
+  margin-right: 0.12rem;
+}
+
+/* Empty state — minimal padding so it doesn't create gray space inside stretched cards */
+.modern-dashboard .dashboard-worklog-card .dashboard-activity-empty {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.72rem;
+}
+
+/* Prevent the empty state from being pushed to the bottom of stretched cards */
+.modern-dashboard .dashboard-primary-col .dashboard-worklog-card > *:last-child {
+  margin-top: 0;
+}
+
+/* ── Team Schedule / Yearly Plan Card ────────────────────── */
+.modern-dashboard .dashboard-team-schedule-card {
+  border: 1px solid rgba(226, 232, 240, 0.6);
+}
+
+/* ── Stats Cards (Sidebar) ──────────────────────────────── */
+.modern-dashboard .dashboard-stats-card {
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  border-radius: var(--md-radius-lg);
+  overflow: hidden;
+}
+
+.modern-dashboard .dashboard-stats-card .dashboard-stats-card-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--md-primary);
+  margin-bottom: 0.25rem;
+}
+
+.modern-dashboard .dashboard-stats-card .dashboard-kpi-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--md-text-muted);
+}
+
+.modern-dashboard .dashboard-stats-card .dashboard-kpi-value {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--md-primary);
+}
+
+/* Monthly stats side card - dark branded variant */
+.modern-dashboard .dashboard-stats-row .dashboard-stats-card:first-child {
+  background: linear-gradient(135deg, var(--md-primary) 0%, #1a2946 100%);
+  color: white;
+  border: none;
+}
+
+.modern-dashboard .dashboard-stats-row .dashboard-stats-card:first-child .dashboard-stats-card-title {
+  color: white;
+}
+
+.modern-dashboard .dashboard-stats-row .dashboard-stats-card:first-child .dashboard-kpi-label {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.modern-dashboard .dashboard-stats-row .dashboard-stats-card:first-child .dashboard-kpi-value {
+  color: white;
+}
+
+/* ── Stats Row (sidebar container) ────────────────────────── */
+.modern-dashboard .dashboard-stats-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.modern-dashboard .dashboard-stats-row .card {
+  padding: 1.25rem;
+}
+
+/* Stats breakdown items — color by key via data attribute */
+.modern-dashboard .dashboard-breakdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--md-radius-sm);
+  background: #f3f4f6;
+}
+
+.modern-dashboard .dashboard-breakdown-item .dashboard-breakdown-count,
+.modern-dashboard .dashboard-breakdown-item .dashboard-breakdown-label {
+  color: #374151;
+}
+
+.modern-dashboard .dashboard-breakdown-item .dashboard-breakdown-count {
+  font-weight: 800;
+  font-size: 0.85rem;
+  min-width: 1.5rem;
+  text-align: right;
+}
+
+.modern-dashboard .dashboard-breakdown-item .dashboard-breakdown-label {
+  font-size: 0.72rem;
+}
+
+/* Leave history status pills */
+.modern-dashboard .status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+/* ── Hero of the Week Card ────────────────────────────────── */
+.modern-dashboard .dashboard-hero-stats-card.hero-slot {
+  border: 1px solid rgba(245, 158, 11, 0.15);
+  background: linear-gradient(180deg, #ffffff 0%, #fffbeb 100%);
+  padding: 1.25rem;
+}
+
+.modern-dashboard .dashboard-hero-stats-card .dashboard-hero-stats-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.modern-dashboard .dashboard-hero-stats-card .dashboard-hero-stats-head-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.modern-dashboard .dashboard-hero-stats-card .dashboard-hero-stats-foot {
+  position: relative;
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.modern-dashboard .dashboard-hero-stats-card .hero-refresh-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  transition: transform 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+
+.modern-dashboard .dashboard-hero-stats-card .hero-refresh-btn:not([disabled]) {
+  color: #3b82f6;
+}
+
+.modern-dashboard .dashboard-hero-stats-card .hero-refresh-btn:not([disabled]):hover {
+  transform: rotate(45deg);
+}
+
+.modern-dashboard .dashboard-hero-stats-card .hero-refresh-btn[disabled] {
+  color: #cbd5e1;
+  cursor: not-allowed;
+}
+
+.modern-dashboard .dashboard-hero-stats-card .hero-version-badge {
+  position: absolute;
+  bottom: 4px;
+  right: 8px;
+  font-size: 0.65rem;
+  color: #94a3b8;
+  opacity: 0.7;
+}
+
+.modern-dashboard .dashboard-hero-stats-card .hero-label-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #92400e;
+  background: rgba(245, 158, 11, 0.1);
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.modern-dashboard .dashboard-hero-stats-card .hero-profile {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.modern-dashboard .dashboard-hero-stats-card .hero-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid rgba(245, 158, 11, 0.2);
+  flex-shrink: 0;
+}
+
+.modern-dashboard .dashboard-hero-stats-card .hero-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--md-primary);
+}
+
+.modern-dashboard .dashboard-hero-stats-card .hero-role {
+  font-size: 0.65rem;
+  color: var(--md-text-muted);
+}
+
+.modern-dashboard .dashboard-hero-stats-card .hero-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.modern-dashboard .dashboard-hero-stats-card .hero-metric {
+  text-align: center;
+  padding: 0.5rem 0.2rem;
+  background: var(--md-surface-container-low);
+  border: 1px solid var(--md-outline-variant);
+  border-radius: var(--md-radius-sm);
+}
+
+.modern-dashboard .dashboard-hero-stats-card .hero-metric-value {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--md-primary);
+}
+
+.modern-dashboard .dashboard-hero-stats-card .hero-metric-label {
+  font-size: 0.55rem;
+  color: var(--md-on-surface-variant);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Hero metrics — semantic colors by position */
+/* NOTE: `!important` required because main.css uses `!important` on the
+   `.dashboard-staff-view .dashboard-hero-stats-card .hero-metric-value`
+   rule (line ~11510) and `.hero-metric-label` rule (line ~11515). */
+/* 1: Planned — blue */
+.modern-dashboard .dashboard-hero-stats-card .hero-metrics .hero-metric:nth-child(1) .hero-metric-value {
+  color: #3b82f6 !important;
+}
+.modern-dashboard .dashboard-hero-stats-card .hero-metrics .hero-metric:nth-child(1) .hero-metric-label {
+  color: #2563eb !important;
+}
+.modern-dashboard .dashboard-hero-stats-card .hero-metrics .hero-metric:nth-child(1) {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.25);
+}
+
+/* 2: Completed — green */
+.modern-dashboard .dashboard-hero-stats-card .hero-metrics .hero-metric:nth-child(2) .hero-metric-value {
+  color: #059669 !important;
+}
+.modern-dashboard .dashboard-hero-stats-card .hero-metrics .hero-metric:nth-child(2) .hero-metric-label {
+  color: #047857 !important;
+}
+.modern-dashboard .dashboard-hero-stats-card .hero-metrics .hero-metric:nth-child(2) {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+/* 3: In Progress — indigo */
+.modern-dashboard .dashboard-hero-stats-card .hero-metrics .hero-metric:nth-child(3) .hero-metric-value {
+  color: #6366f1 !important;
+}
+.modern-dashboard .dashboard-hero-stats-card .hero-metrics .hero-metric:nth-child(3) .hero-metric-label {
+  color: #4f46e5 !important;
+}
+.modern-dashboard .dashboard-hero-stats-card .hero-metrics .hero-metric:nth-child(3) {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: rgba(99, 102, 241, 0.25);
+}
+
+/* 4: Postponed — amber */
+.modern-dashboard .dashboard-hero-stats-card .hero-metrics .hero-metric:nth-child(4) .hero-metric-value {
+  color: #d97706 !important;
+}
+.modern-dashboard .dashboard-hero-stats-card .hero-metrics .hero-metric:nth-child(4) .hero-metric-label {
+  color: #b45309 !important;
+}
+.modern-dashboard .dashboard-hero-stats-card .hero-metrics .hero-metric:nth-child(4) {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.25);
+}
+
+/* 5: Missed — red */
+.modern-dashboard .dashboard-hero-stats-card .hero-metrics .hero-metric:nth-child(5) .hero-metric-value {
+  color: #dc2626 !important;
+}
+.modern-dashboard .dashboard-hero-stats-card .hero-metrics .hero-metric:nth-child(5) .hero-metric-label {
+  color: #b91c1c !important;
+}
+.modern-dashboard .dashboard-hero-stats-card .hero-metrics .hero-metric:nth-child(5) {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.modern-dashboard .dashboard-hero-stats-card .hero-attendance-modifier-row {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.modern-dashboard .dashboard-hero-stats-card .hero-attendance-pill {
+  font-size: 0.62rem;
+  background: var(--md-surface-container);
+  border: 1px solid var(--md-outline-variant);
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  color: var(--md-on-surface-variant);
+}
+
+.modern-dashboard .dashboard-hero-stats-card .hero-attendance-pill strong {
+  color: var(--md-primary);
+  font-weight: 800;
+}
+
+/* ── Team Activity Feed ───────────────────────────────────── */
+.modern-dashboard .dashboard-team-activity-card {
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 1rem;
+}
+
+.modern-dashboard .dashboard-team-activity-card .dashboard-team-activity-head {
+  margin-bottom: 0.75rem;
+  flex-shrink: 0;
+}
+
+.modern-dashboard .dashboard-team-activity-card .dashboard-team-activity-head h4 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--md-primary);
+  margin: 0;
+}
+
+/* Activity timeline items */
+.modern-dashboard .dashboard-activity-item {
+  position: relative;
+  padding: 0.6rem 0.6rem 0.6rem 1rem;
+  margin-bottom: 0.35rem;
+  border-left: 3px solid var(--md-outline-variant);
+  border-radius: 0 var(--md-radius-sm) var(--md-radius-sm) 0;
+  background: var(--md-surface-container-low);
+  transition: all 0.15s;
+  display: flex;
+  flex-direction: column;
+}
+
+.modern-dashboard .dashboard-activity-item[data-activity-type="collab"] {
+  border-left-color: #10b981;
+}
+
+.modern-dashboard .dashboard-activity-item[data-activity-type="minute"] {
+  border-left-color: #6366f1;
+}
+
+.modern-dashboard .dashboard-activity-item[data-activity-type="default"] {
+  border-left-color: #e5e7eb;
+}
+
+.modern-dashboard .dashboard-activity-item:hover {
+  background: var(--md-surface-white);
+}
+
+.modern-dashboard .dashboard-activity-item .dashboard-activity-desc {
+  font-size: 0.78rem;
+  color: var(--md-on-surface);
+  font-weight: 500;
+  margin-bottom: 0.2rem;
+}
+
+.modern-dashboard .dashboard-activity-item .dashboard-activity-meta {
+  font-size: 0.68rem;
+  color: var(--md-text-muted);
+}
+
+.modern-dashboard .dashboard-activity-date {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--md-text-muted);
+  margin: 0.75rem 0 0.35rem 0;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--md-outline-variant);
+}
+
+/* ── Detail Section / Journey Card ────────────────────────── */
+.modern-dashboard .dashboard-detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.modern-dashboard .dashboard-detail-section .card {
+  padding: 1rem;
+}
+
+.modern-dashboard .dashboard-detail-section .dashboard-journey-card {
+  border: 1px solid rgba(99, 102, 241, 0.12);
+}
+
+/* ── Schedule + Hero side-by-side row (non-admin view) ──── */
+.modern-dashboard .dashboard-schedule-hero-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 640px) {
+  .modern-dashboard .dashboard-schedule-hero-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Hero of Week missed tasks overlay ────────────────────── */
+.modern-dashboard .dashboard-hero-missed-corner-wrap {
+  margin-bottom: 0.5rem;
+}
+
+.modern-dashboard .dashboard-hero-missed-corner-wrap .dashboard-missed-strip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: all 0.2s;
+}
+
+.modern-dashboard .dashboard-hero-missed-corner-wrap .dashboard-missed-strip:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.modern-dashboard .dashboard-hero-missed-corner-wrap .dashboard-missed-strip-title {
+  color: var(--md-danger);
+  font-weight: 600;
+}
+
+.modern-dashboard .dashboard-hero-missed-corner-wrap .dashboard-missed-strip-count {
+  background: var(--md-danger);
+  color: white;
+  font-weight: 700;
+  font-size: 0.68rem;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Staff View Banner ────────────────────────────────────── */
+.modern-dashboard .dashboard-staff-view-banner {
+  background: linear-gradient(135deg, #1e1b4b 0%, var(--md-secondary) 100%);
+  color: white;
+  border: none;
+  border-radius: var(--md-radius-lg);
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.modern-dashboard .dashboard-staff-view-banner .dashboard-staff-view-banner-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.modern-dashboard .dashboard-staff-view-banner .dashboard-staff-view-banner-profile {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.modern-dashboard .dashboard-staff-view-banner .dashboard-staff-view-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+.modern-dashboard .dashboard-staff-view-banner .dashboard-staff-view-eyebrow {
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.7;
+}
+
+.modern-dashboard .dashboard-staff-view-banner .dashboard-staff-view-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.modern-dashboard .dashboard-staff-view-banner .dashboard-staff-view-meta {
+  font-size: 0.72rem;
+  opacity: 0.8;
+}
+
+.modern-dashboard .dashboard-staff-view-banner .dashboard-staff-view-back-btn {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  font-size: 0.75rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.modern-dashboard .dashboard-staff-view-banner .dashboard-staff-view-back-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* ── Notification Panel ───────────────────────────────────── */
+.modern-dashboard .dashboard-notif-panel {
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  border-radius: var(--md-radius-lg);
+  margin-bottom: 0.5rem;
+}
+
+/* ── Postpone Task Modal ─────────────────────────────────── */
+.postpone-modal-content {
+  max-width: 420px;
+}
+
+.postpone-modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.8rem;
+}
+
+.postpone-modal-head h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.postpone-modal-close {
+  background: none;
+  border: none;
+  font-size: 1.1rem;
+  cursor: pointer;
+  color: inherit;
+  padding: 0.25rem;
+  line-height: 1;
+}
+
+.postpone-modal-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.85rem;
+  color: #475569;
+  font-weight: 600;
+}
+
+.postpone-modal-input {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  box-sizing: border-box;
+}
+
+.postpone-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.postpone-modal-actions .action-btn {
+  padding: 0.55rem 0.9rem;
+}
+
+/* ── Leave Request / History / Tagged Cards ──────────────── */
+.modern-dashboard .dashboard-leave-requests-card,
+.modern-dashboard .dashboard-leave-history-card,
+.modern-dashboard .dashboard-tagged-card {
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  padding: 1.25rem;
+}
+
+/* ── Yearly Plan / Schedule Card ──────────────────────────── */
+.modern-dashboard .dashboard-team-schedule-card {
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  padding: 1.25rem;
+}
+
+/* Team Schedule — Button Row (Add Plan / Edit Plan) — Global Styles */
+.ts-btn-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.ts-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  border: 1px solid;
+  transition: all 0.15s cubic-bezier(0.2, 0, 0, 1);
+  line-height: 1;
+}
+
+.ts-btn:hover {
+  transform: translateY(-1px);
+}
+
+.ts-btn:active {
+  transform: scale(0.96);
+}
+
+.ts-btn i {
+  font-size: 0.6rem;
+}
+
+.ts-btn-add {
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.ts-btn-add:hover {
+  background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+  box-shadow: 0 2px 8px rgba(29, 78, 216, 0.15);
+}
+
+.ts-btn-edit {
+  background: linear-gradient(135deg, #ffffff, #f8fafc);
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+.ts-btn-edit:hover {
+  background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+  border-color: #94a3b8;
+  box-shadow: 0 2px 8px rgba(71, 85, 105, 0.12);
+}
+
+.ts-btn-holiday {
+  background: none;
+  border: none;
+  color: var(--primary, #3f63a8);
+  font-size: 1rem;
+  padding: 0.15rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+  cursor: pointer;
+}
+
+.ts-btn-holiday:hover {
+  opacity: 1;
+}
+
+/* Team Schedule — Calendar header row (month nav + buttons) */
+.dashboard-team-schedule-card .ts-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid #f3f4f6;
+  flex-wrap: wrap;
+}
+
+.dashboard-team-schedule-card .ts-header-row .ts-month-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dashboard-team-schedule-card .ts-header-row .ts-month-nav button {
+  background: none;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 2px;
+  font-size: 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+
+.dashboard-team-schedule-card .ts-header-row .ts-month-nav button:hover {
+  background: #f1f5f9;
+  color: #1f2937;
+}
+
+.dashboard-team-schedule-card .ts-header-row .ts-month-nav h4 {
+  margin: 0;
+  color: #1f2937;
+  font-size: 0.9rem;
+  min-width: 70px;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .dashboard-team-schedule-card .ts-header-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ts-btn-row {
+    justify-content: center;
+  }
+
+  .ts-btn {
+    padding: 0.35rem 0.65rem;
+    font-size: 0.7rem;
+  }
+}
+
+/* ── Team Schedule — Card Inner Layout ───────────────────── */
+.ts-card {
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.ts-card-head {
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid #f3f4f6;
+  padding-bottom: 0.4rem;
+}
+
+.ts-card-head h4 {
+  margin: 0;
+  color: #1f2937;
+  font-size: 1rem;
+}
+
+.ts-card-head span {
+  font-size: 0.7rem;
+  color: #6b7280;
+}
+
+/* ── Team Schedule — Calendar Grid ───────────────────────── */
+.ts-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  text-align: center;
+  font-size: 0.65rem;
+}
+
+.ts-weekday {
+  font-weight: 700;
+  color: #9ca3af;
+  padding: 2px 0;
+}
+
+/* ── Calendar & Legend Semantic Color Tokens ─────────────── */
+:root {
+  --cal-color-leave-bg: #fee2e2;
+  --cal-color-leave-text: #b91c1c;
+  --cal-color-event-bg: #dcfce7;
+  --cal-color-event-text: #166534;
+  --cal-color-work-border: #818cf8;
+  --cal-color-holiday-bg: #f9fafb;
+  --cal-color-holiday-text: #9ca3af;
+  --cal-color-half-bg: #fffbeb;
+  --cal-color-half-text: #d97706;
+  --cal-color-half-border: #fde68a;
+  --cal-color-hover-bg: #f3f4f6;
+  --cal-color-today-bg: var(--primary, #3f63a8);
+  --cal-color-today-text: #ffffff;
+  --cal-legend-dot-leave: #b91c1c;
+  --cal-legend-dot-event: #166534;
+  --cal-legend-dot-holiday-bg: #eee;
+  --cal-legend-dot-holiday-border: #ccc;
+  --cal-legend-dot-half-bg: #fffbeb;
+  --cal-legend-dot-half-border: #d97706;
+}
+
+[data-theme="dark"] {
+  --cal-color-leave-bg: rgba(185, 28, 28, 0.25);
+  --cal-color-leave-text: #fca5a5;
+  --cal-color-event-bg: rgba(22, 101, 52, 0.25);
+  --cal-color-event-text: #86efac;
+  --cal-color-work-border: #6366f1;
+  --cal-color-holiday-bg: rgba(100, 116, 139, 0.15);
+  --cal-color-holiday-text: #94a3b8;
+  --cal-color-half-bg: rgba(217, 119, 6, 0.15);
+  --cal-color-half-text: #fbbf24;
+  --cal-color-half-border: #b45309;
+  --cal-color-hover-bg: rgba(255, 255, 255, 0.08);
+  --cal-color-today-bg: var(--md-secondary, #3b82f6);
+  --cal-color-today-text: #ffffff;
+  --cal-legend-dot-leave: #fca5a5;
+  --cal-legend-dot-event: #86efac;
+  --cal-legend-dot-holiday-bg: rgba(148, 163, 184, 0.5);
+  --cal-legend-dot-holiday-border: #64748b;
+  --cal-legend-dot-half-bg: #78350f;
+  --cal-legend-dot-half-border: #fbbf24;
+}
+
+/* ── Team Schedule — Calendar Day Cells ──────────────────── */
+.cal-day {
+  padding: 4px;
+  border-radius: 4px;
+  position: relative;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.cal-day:hover:not(.empty) {
+  background: var(--cal-color-hover-bg);
+}
+
+.cal-day.today {
+  background: var(--cal-color-today-bg) !important;
+  color: var(--cal-color-today-text) !important;
+  font-weight: 700;
+  border-color: transparent !important;
+}
+
+.cal-day[data-has-leave="true"] {
+  background: var(--cal-color-leave-bg);
+  color: var(--cal-color-leave-text);
+}
+
+.cal-day[data-has-event="true"] {
+  background: var(--cal-color-event-bg);
+  color: var(--cal-color-event-text);
+}
+
+.cal-day[data-has-work="true"] {
+  border-color: var(--cal-color-work-border);
+}
+
+.cal-day[data-day-type="Holiday"] {
+  background: var(--cal-color-holiday-bg);
+  color: var(--cal-color-holiday-text);
+  opacity: 0.8;
+}
+
+.cal-day[data-day-type="Half Day"] {
+  background: var(--cal-color-half-bg);
+  color: var(--cal-color-half-text);
+  border-color: var(--cal-color-half-border);
+}
+
+.cal-day.empty {
+  visibility: hidden;
+}
+
+/* ── Team Schedule — Legend ──────────────────────────────── */
+.ts-legend {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  font-size: 0.55rem;
+  color: #6b7280;
+  justify-content: center;
+}
+
+.ts-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ts-legend-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ts-legend-dot-leave {
+  background: var(--cal-legend-dot-leave);
+}
+
+.ts-legend-dot-event {
+  background: var(--cal-legend-dot-event);
+}
+
+.ts-legend-dot-holiday {
+  background: var(--cal-legend-dot-holiday-bg);
+  border: 0.5px solid var(--cal-legend-dot-holiday-border);
+}
+
+.ts-legend-dot-half {
+  background: var(--cal-legend-dot-half-bg);
+  border: 0.5px solid var(--cal-legend-dot-half-border);
+}
+
+/* ── Global Modal Shared Styles ──────────────────────────── */
+.gm-input,
+input.gm-input,
+select.gm-input,
+textarea.gm-input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 0.5rem;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.gm-hidden {
+  display: none;
+}
+
+.gm-label-block {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 0.5rem;
+}
+
+.gm-card-flex {
+  flex: 1;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  background: white;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.gm-flex-gap {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.gm-flex-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.gm-flex-col-mt {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.gm-center {
+  justify-self: center;
+}
+
+.gm-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.gm-text {
+  font-size: 0.82rem;
+  color: #1e293b;
+}
+
+.gm-hint {
+  display: block;
+  font-size: 0.78rem;
+  color: #64748b;
+  margin-bottom: 0.25rem;
+}
+
+.gm-flex-row {
+  display: flex;
+  gap: 1rem;
+}
+
+.gm-flex-row-wrap {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.gm-flex-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.gm-flex-fill {
+  flex: 1;
+}
+
+/* Admin utility classes */
+.adm-input {
+  padding: 0.45rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+}
+
+.adm-text-sm {
+  font-size: 0.75rem;
+}
+
+.adm-text-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.adm-grid-row {
+  display: grid;
+  gap: 0.35rem;
+}
+
+/* ── Card Mode Controls ───────────────────────────────────── */
+.modern-dashboard .dashboard-card-mode-controls {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  gap: 0.2rem;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 5;
+}
+
+.modern-dashboard .card:hover .dashboard-card-mode-controls {
+  opacity: 1;
+}
+
+.modern-dashboard .dashboard-card-mode-btn {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--md-text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  transition: all 0.15s;
+}
+
+.modern-dashboard .dashboard-card-mode-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--md-primary);
+}
+
+/* ── Layout Edit Button ───────────────────────────────────── */
+.modern-dashboard .dashboard-layout-toggle {
+  font-size: 0.72rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  background: var(--md-surface-container);
+  border: 1px solid var(--md-outline-variant);
+  color: var(--md-text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.modern-dashboard .dashboard-layout-toggle:hover {
+  background: var(--md-surface-container-high);
+  color: var(--md-primary);
+}
+
+.modern-dashboard .dashboard-layout-toggle.active {
+  background: var(--md-secondary);
+  color: white;
+  border-color: var(--md-secondary);
+}
+
+/* ── Edit Mode Widget Handles ─────────────────────────────── */
+.modern-dashboard.dashboard-edit-mode .dashboard-widget-handle {
+  position: absolute;
+  top: 0.25rem;
+  left: 0.25rem;
+  padding: 0.25rem;
+  cursor: grab;
+  color: var(--md-text-muted);
+  opacity: 0.6;
+  z-index: 10;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.modern-dashboard.dashboard-edit-mode .dashboard-widget-handle:hover {
+  opacity: 1;
+  color: var(--md-primary);
+}
+
+.modern-dashboard.dashboard-edit-mode .dashboard-resize-handle {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  z-index: 10;
+  background: linear-gradient(135deg, transparent 50%, var(--md-outline-variant) 50%);
+  border-radius: 0 0 4px 0;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.modern-dashboard.dashboard-edit-mode .dashboard-resize-handle:hover {
+  opacity: 1;
+}
+
+/* ── Responsive adjustments ──────────────────────────────── */
+@media (max-width: 1023px) {
+  .modern-dashboard .modern-dashboard-header .modern-header-content {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .modern-dashboard .modern-dashboard-header .modern-header-title {
+    font-size: 1.35rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .modern-dashboard .dashboard-hero-card .dashboard-hero-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .modern-dashboard .dashboard-hero-card .dashboard-hero-aside {
+    width: 100%;
+  }
+
+  .modern-dashboard .dashboard-hero-card .dashboard-viewing-box {
+    width: 100%;
+  }
+
+  .modern-dashboard .dashboard-hero-card .dashboard-viewing-box .dashboard-viewing-select {
+    max-width: 100%;
+  }
+
+  .modern-dashboard .dashboard-hero-stats-card .hero-metrics {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .modern-dashboard .dashboard-checkin-card .timer-display {
+    font-size: 1.8rem;
+  }
+
+  .modern-dashboard .dashboard-checkin-card .dashboard-checkin-action-row {
+    flex-direction: column;
+  }
+}
+
+/* ── Dark Mode Support (if enabled) ───────────────────────── */
+[data-theme="dark"] .modern-dashboard .card {
+  background: rgba(30, 41, 59, 0.85);
+  border-color: rgba(71, 85, 105, 0.5);
+}
+
+[data-theme="dark"] .modern-dashboard .dashboard-hero-card {
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+}
+
+[data-theme="dark"] .modern-dashboard .dashboard-checkin-card {
+  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+}
+
+[data-theme="dark"] .modern-dashboard .dashboard-checkin-card .dashboard-checkin-name,
+[data-theme="dark"] .modern-dashboard .dashboard-hero-card .dashboard-hero-title,
+[data-theme="dark"] .modern-dashboard .dashboard-hero-stats-card .hero-name,
+[data-theme="dark"] .modern-dashboard .dashboard-hero-stats-card .hero-metric-value {
+  color: #f1f5f9;
+}
+
+[data-theme="dark"] .modern-dashboard .dashboard-planned-task-item {
+  background: rgba(30, 41, 59, 0.6);
+}
+
+[data-theme="dark"] .modern-dashboard .dashboard-hero-stats-card {
+  background: linear-gradient(180deg, #1e293b 0%, #1a1a2e 100%);
+}
+
+[data-theme="dark"] .modern-dashboard .dashboard-stats-row .dashboard-stats-card:first-child {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+}
+
+/* ==========================================================
+   Responsive overrides (merged from dashboard-mobile.css)
+   Mobile-first: <768px default, md ≥768px, lg ≥1024px
+   ========================================================== */
+
+/* === MOBILE DEFAULT (< 768px) === */
+[data-viewport="mobile"] .dashboard-hero-card {
+  width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  height: auto !important;
+  min-height: auto !important;
+  max-height: none !important;
+  padding: 0.85rem 0.75rem !important;
+}
+
+[data-viewport="mobile"] .dashboard-primary-row {
+  display: flex !important;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+[data-viewport="mobile"] .dashboard-stats-row {
+  grid-template-columns: 1fr !important;
+}
+
+[data-viewport="mobile"].dashboard-grid {
+  gap: 0.5rem;
+}
+
+[data-viewport="mobile"] .card {
+  padding: 0.5rem;
+}
+
+[data-viewport="mobile"] .dashboard-hero-stats-card .hero-metrics {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+[data-viewport="mobile"] .dashboard-team-activity-list-split .dashboard-team-activity-split-grid {
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+[data-viewport="mobile"] .dashboard-leave-row {
+  flex-direction: column;
+}
+[data-viewport="mobile"] .dashboard-leave-actions {
+  min-width: 0;
+  justify-content: stretch;
+}
+
+/* === TABLET (>= 768px) === */
+@media (min-width: 768px) {
+  .dashboard-staff-view .dashboard-primary-row,
+  .dashboard-admin-view .dashboard-primary-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+  }
+
+  .dashboard-staff-view .dashboard-hero-card,
+  .dashboard-admin-view .dashboard-hero-card {
+    height: clamp(72px, 4.7vw, 82px) !important;
+    min-height: clamp(72px, 4.7vw, 82px) !important;
+    max-height: 82px !important;
+    padding: var(--hero-block-pad-y) var(--hero-block-pad-x) !important;
+  }
+
+  .dashboard-staff-view .dashboard-stats-row,
+  .dashboard-admin-view .dashboard-stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+
+  .dashboard-leave-row {
+    flex-direction: row;
+  }
+  .dashboard-leave-actions {
+    min-width: 240px;
+  }
+
+  .dashboard-team-activity-list-split .dashboard-team-activity-split-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .dashboard-primary-row > .card.dashboard-card-mode-tile {
+    height: auto;
+    min-height: clamp(240px, 30vh, 290px);
+  }
+}
+
+/* === DESKTOP (>= 1024px) === */
+@media (min-width: 1024px) {
+  .dashboard-staff-view .dashboard-primary-row,
+  .dashboard-admin-view .dashboard-primary-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .dashboard-staff-view .dashboard-grid,
+  .dashboard-admin-view .dashboard-grid {
+    gap: 0.75rem;
+  }
+
+  .card {
+    padding: 0.75rem;
+  }
+}

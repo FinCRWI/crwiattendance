@@ -1505,11 +1505,10 @@ export async function openDayPlan(date, targetUserId = null, forcedScope = null,
                 annualWorkPlan = prefetched?.annualWorkPlan || null;
                 allDayPlans = prefetched?.allDayPlans || null;
             } else {
-                // Fire personal & annual plan fetches immediately — they don't depend on allUsers.
-                const dataPromise = loadDayPlanData(dateKey, targetId);
-                // Pre-fetch user data in parallel — we know the date and targetId
-                const usersPromise = getReferencedDayPlanUsers(null, targetId);
-                const [data, allUsers] = await Promise.all([dataPromise, usersPromise]);
+                // Single fetch: load plan data first, then fetch users for all referenced IDs.
+                // This avoids a separate parallel call that only gets the target user,
+                // followed by a second call to get remaining referenced users.
+                const data = await loadDayPlanData(dateKey, targetId);
                 personalWorkPlan = data.personalWorkPlan;
                 annualWorkPlan = data.annualWorkPlan;
                 allDayPlans = data.allDayPlans;

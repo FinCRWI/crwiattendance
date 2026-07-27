@@ -6,6 +6,7 @@
 import { safeHtml } from './helpers.js';
 import { AppConfig } from '../config.js';
 import { SiteAnnouncement } from './site-announcement.js';
+import { onAction } from '../utils/action-router.js';
 
 let aiAssistantModulePromise = null;
 async function getAIAssistant() {
@@ -164,7 +165,7 @@ const renderAdminAiNarrationPanel = ({
                 <option value="exceptions">Exception analysis</option>
                 <option value="executive">Executive narration</option>
             </select>
-            <button type="button" id="admin-ai-run-btn" class="action-btn secondary" onclick="window.app_requestAdminAiSummary?.()">
+            <button type="button" id="admin-ai-run-btn" class="action-btn secondary" data-ts-action="admin-request-ai-summary">
                 <i class="fa-solid fa-wand-magic-sparkles"></i> Summarize with AI
             </button>
         </div>
@@ -249,7 +250,7 @@ const ensureAdminMaxOverlay = () => {
             <div class="admin-max-window" role="dialog" aria-modal="true" aria-labelledby="${ADMIN_MAX_TITLE_ID}">
                 <div class="admin-max-header">
                     <h2 id="${ADMIN_MAX_TITLE_ID}"></h2>
-                    <button type="button" class="admin-max-close" onclick="window.app_closeAdminCardMaximize?.()" aria-label="Close maximized card">
+                    <button type="button" class="admin-max-close" data-ts-action="admin-close-maximize" aria-label="Close maximized card">
                         <i class="fa-solid fa-xmark"></i>
                     </button>
                 </div>
@@ -404,6 +405,98 @@ if (typeof window !== 'undefined') {
     window.app_toggleAdminCardMaximize = (cardId, triggerEl = null) => {
         window.app_toggleAdminCardMode?.(cardId, ADMIN_CARD_MODE_FULLSCREEN, triggerEl || null);
     };
+
+    // Register admin actions with shared router (once).
+    if (!window._adminActionRegistered) {
+        window._adminActionRegistered = true;
+
+        // Simple window function calls
+        onAction('admin-request-ai-summary', () => window.app_requestAdminAiSummary?.());
+        onAction('admin-close-maximize', () => window.app_closeAdminCardMaximize?.());
+        onAction('open-staff-ai-memory', () => window.app_openStaffAiMemorySheet?.());
+        onAction('refresh-staff-ai-memory', () => window.app_refreshStaffAiMemorySheet?.());
+
+        // Navigation
+        onAction('hash-navigate', (el) => {
+            const hash = el.dataset.hash || '';
+            if (hash) window.location.hash = hash;
+        });
+
+        // Show modal
+        onAction('show-modal', (el) => {
+            const id = el.dataset.target || '';
+            if (id) document.getElementById(id).style.display = 'flex';
+        });
+
+        // Backup / Reset data (with ternary safety checks already handled in template)
+        onAction('backup-staff-data', () => {
+            if (typeof window.app_backupStaffData === 'function') window.app_backupStaffData();
+            else alert('Backup tools are not loaded yet. Please refresh this page.');
+        });
+        onAction('backup-staff-data-csv', () => {
+            if (typeof window.app_backupStaffDataCSV === 'function') window.app_backupStaffDataCSV();
+            else alert('Backup tools are not loaded yet. Please refresh this page.');
+        });
+        onAction('reset-staff-data', (el) => {
+            if (typeof window.app_resetStaffData === 'function') {
+                const startId = el.dataset.startId || 'staff-reset-start-date';
+                const endId = el.dataset.endId || 'staff-reset-end-date';
+                window.app_resetStaffData({
+                    startDate: document.getElementById(startId)?.value || '',
+                    endDate: document.getElementById(endId)?.value || ''
+                });
+            } else {
+                alert('Reset tools are not loaded yet. Please refresh this page.');
+            }
+        });
+        onAction('apply-audit-filter', (el) => {
+            const startId = el.dataset.startId || 'audit-start';
+            const endId = el.dataset.endId || 'audit-end';
+            window.app_applyAuditFilter?.(
+                document.getElementById(startId)?.value || '',
+                document.getElementById(endId)?.value || ''
+            );
+        });
+
+        // Functions with data attribute args
+        onAction('view-logs', (el) => window.app_viewLogs?.(el.dataset.userId || ''));
+        onAction('edit-user', (el) => window.app_editUser?.(el.dataset.userId || ''));
+        onAction('undo-leave', (el) => window.app_undoLeaveDecision?.(el.dataset.leaveId || ''));
+        onAction('approve-leave', (el) => window.app_approveLeave?.(el.dataset.leaveId || ''));
+        onAction('reject-leave', (el) => window.app_rejectLeave?.(el.dataset.leaveId || ''));
+        onAction('save-budget-head', (el) => window.app_saveBudgetHeadRow?.(el.dataset.budgetHeadId || '', el));
+        onAction('prefill-budget-parent', (el) => window.app_prefillBudgetHeadParent?.(el.dataset.budgetHeadId || ''));
+
+        // Complex handlers
+        onAction('undo-missed-checkout-review', (el) => {
+            window.app_undoMissedCheckoutReview?.(el.dataset.notificationId || '');
+        });
+        onAction('review-missed-checkout', (el) => {
+            window.app_reviewMissedCheckoutReasonFromNotification?.(
+                -1,
+                el.dataset.notificationId || '',
+                el.dataset.reviewAction || 'approved'
+            );
+        });
+        onAction('apply-audit-filter', () => {
+            window.app_applyAuditFilter?.(
+                document.getElementById('audit-start')?.value || '',
+                document.getElementById('audit-end')?.value || ''
+            );
+        });
+        onAction('export-compliance-csv', () => {
+            window.AppReports?.exportComplianceExceptionsCSV?.({ days: 31, unresolvedOnly: true });
+        });
+        onAction('assign-budget-team-task', (el) => {
+            window.app_assignBudgetHeadToTeamTask?.(el.dataset.planId || '', el.dataset.taskIndex, el);
+        });
+        onAction('assign-budget-attendance', (el) => {
+            window.app_assignBudgetHeadToAttendance?.(el.dataset.attendanceId || '', el);
+        });
+
+        // Card mode toggles
+        onAction('admin-toggle-card-mode', (el) => window.app_toggleAdminCardMode?.(el.dataset.cardId || '', el.dataset.mode || 'tile', el));
+    }
 }
 
 export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
@@ -713,10 +806,10 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
         return `
             <p class="text-muted">Create a full backup before running a staff activity reset.</p>
             <div class="admin-data-actions">
-                <button class="action-btn secondary" onclick="(typeof window.app_backupStaffData === 'function') ? window.app_backupStaffData() : alert('Backup tools are not loaded yet. Please refresh this page.')">
+                <button class="action-btn secondary" data-ts-action="backup-staff-data">
                     <i class="fa-solid fa-download"></i> Backup Staff Data
                 </button>
-                <button class="action-btn secondary" onclick="(typeof window.app_backupStaffDataCSV === 'function') ? window.app_backupStaffDataCSV() : alert('Backup tools are not loaded yet. Please refresh this page.')">
+                <button class="action-btn secondary" data-ts-action="backup-staff-data-csv">
                     <i class="fa-solid fa-file-csv"></i> Backup Staff Data (CSV)
                 </button>
             </div>
@@ -729,7 +822,7 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
                     <span>To Date</span>
                     <input type="date" id="${endId}">
                 </label>
-                <button class="action-btn danger" onclick="(typeof window.app_resetStaffData === 'function') ? window.app_resetStaffData({ startDate: ${fromRead}, endDate: ${toRead} }) : alert('Reset tools are not loaded yet. Please refresh this page.')">
+                <button class="action-btn danger" data-ts-action="reset-staff-data" data-start-id="${startId}" data-end-id="${endId}">
                     <i class="fa-solid fa-triangle-exclamation"></i> Reset Staff Data
                 </button>
             </div>
@@ -746,9 +839,9 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
         const endRead = `document.getElementById('${endId}')?.value || ''`;
         return `
             <div class="admin-audit-filter-row">
-                <input type="date" id="${startId}" value="${auditStartDate}" style="font-size:0.75rem;">
-                <input type="date" id="${endId}" value="${auditEndDate}" style="font-size:0.75rem;">
-                <button type="button" onclick="window.app_applyAuditFilter(${startRead}, ${endRead})" class="action-btn">Filter</button>
+                <input type="date" id="${startId}" value="${auditStartDate}" class="adm-text-sm">
+                <input type="date" id="${endId}" value="${auditEndDate}" class="adm-text-sm">
+                <button type="button" data-ts-action="apply-audit-filter" data-start-id="${startId}" data-end-id="${endId}" class="action-btn">Filter</button>
             </div>
             <div class="table-container ${isExpanded ? 'admin-table-expanded' : ''}">
                 <table>
@@ -769,7 +862,7 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
     };
 
     const renderSimulationAuditBlock = (isExpanded = false) => `
-        <span class="text-muted" style="font-size:0.75rem;">Last ${simulationCleanupAudits.length} entries</span>
+        <span class="text-muted adm-text-sm">Last ${simulationCleanupAudits.length} entries</span>
         <div class="table-container ${isExpanded ? 'admin-table-expanded' : ''}">
             <table>
                 <thead><tr><th>Time</th><th>Event</th><th>Summary</th></tr></thead>
@@ -789,9 +882,9 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
     const renderStaffBlock = (isExpanded = false) => `
         <div class="admin-staff-head">
             <div class="admin-staff-head-actions">
-                ${(window.app_isAdminUser?.() || window.app_canManageBirthdays?.()) ? `<button type="button" class="action-btn secondary" onclick="window.location.hash='birthday-calendar'"><i class="fa-solid fa-cake-candles"></i> Birthday Calendar</button>` : ''}
-                <button type="button" class="action-btn secondary" onclick="window.app_openStaffAiMemorySheet?.()"><i class="fa-solid fa-brain"></i> AI Memory Sheet</button>
-                ${window.app_hasPerm('users', 'admin') ? `<button type="button" class="action-btn" onclick="document.getElementById('add-user-modal').style.display='flex'"><i class="fa-solid fa-user-plus"></i> Add Staff</button>` : ''}
+                ${(window.app_isAdminUser?.() || window.app_canManageBirthdays?.()) ? `<button type="button" class="action-btn secondary" data-ts-action="hash-navigate" data-hash="birthday-calendar"><i class="fa-solid fa-cake-candles"></i> Birthday Calendar</button>` : ''}
+                <button type="button" class="action-btn secondary" data-ts-action="open-staff-ai-memory"><i class="fa-solid fa-brain"></i> AI Memory Sheet</button>
+                ${window.app_hasPerm('users', 'admin') ? `<button type="button" class="action-btn" data-ts-action="show-modal" data-target="add-user-modal"><i class="fa-solid fa-user-plus"></i> Add Staff</button>` : ''}
             </div>
         </div>
         <div class="table-container ${isExpanded ? 'admin-table-expanded' : ''} mobile-table-card admin-staff-table-wrap">
@@ -818,8 +911,8 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
                             <td>${safeHtml(u.role)} / ${safeHtml(u.dept || '--')}</td>
                             <td>
                                 <div class="admin-row-actions">
-                                    <button type="button" onclick="window.app_viewLogs('${u.id}')" class="admin-icon-btn"><i class="fa-solid fa-list-check"></i></button>
-                                    ${window.app_hasPerm('users', 'admin') ? `<button type="button" onclick="window.app_editUser('${u.id}')" class="admin-icon-btn"><i class="fa-solid fa-pen"></i></button>` : ''}
+                                    <button type="button" data-ts-action="view-logs" data-user-id="${u.id}" class="admin-icon-btn"><i class="fa-solid fa-list-check"></i></button>
+                                    ${window.app_hasPerm('users', 'admin') ? `<button type="button" data-ts-action="edit-user" data-user-id="${u.id}" class="admin-icon-btn"><i class="fa-solid fa-pen"></i></button>` : ''}
                                 </div>
                             </td>
                         </tr>`;
@@ -871,7 +964,7 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
                         <div style="font-size:0.75rem; color:#64748b;">${leave.actionDate ? `Reviewed ${safeHtml(new Date(leave.actionDate).toLocaleString())}` : 'Reviewed recently'}${leave.adminComment ? ` • ${safeHtml(leave.adminComment)}` : ''}</div>
                     </div>
                     <div class="admin-leave-actions">
-                        <button type="button" onclick="window.app_undoLeaveDecision('${leave.id}')" class="admin-btn admin-btn-secondary">Undo</button>
+                        <button type="button" data-ts-action="undo-leave" data-leave-id="${leave.id}" class="admin-btn admin-btn-secondary">Undo</button>
                     </div>
                 </div>
             `).join('') : '<div class="text-muted" style="font-size:0.8rem;">No recent leave decisions.</div>'}
@@ -905,13 +998,13 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
                                                         <span style="font-size:0.78rem; color:#475569;">${safeHtml(String(l.daysCount || 0))} day${Number(l.daysCount || 0) === 1 ? '' : 's'}</span>
                                                     </div>
                                                     <div style="display:flex; justify-content:space-between; gap:0.5rem; align-items:flex-start; flex-wrap:wrap;">
-                                                        <div class="text-muted" style="font-size:0.75rem;">
+                                                        <div class="text-muted adm-text-sm">
                                                             Applied ${safeHtml(l.appliedOn ? new Date(l.appliedOn).toLocaleDateString() : '--')}
                                                         </div>
                                                         <div class="admin-leave-actions">
                                                             ${window.app_hasPerm('leaves', 'admin') ? `
-                                                                <button type="button" onclick="window.app_approveLeave('${l.id}')" class="admin-btn admin-btn-success">Approve</button>
-                                                                <button type="button" onclick="window.app_rejectLeave('${l.id}')" class="admin-btn admin-btn-danger">Reject</button>
+                                                                <button type="button" data-ts-action="approve-leave" data-leave-id="${l.id}" class="admin-btn admin-btn-success">Approve</button>
+                                                                <button type="button" data-ts-action="reject-leave" data-leave-id="${l.id}" class="admin-btn admin-btn-danger">Reject</button>
                                                             ` : '<span class="text-muted" style="font-size:0.7rem;">View Only</span>'}
                                                         </div>
                                                     </div>
@@ -942,7 +1035,7 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
                     <div class="dashboard-tagged-status">
                         <span class="dashboard-tagged-pill ${String(log.reviewStatus).toLowerCase() === 'approved' ? 'accepted' : 'rejected'}">${safeHtml(String(log.reviewStatus || '').toUpperCase())}</span>
                         <div class="dashboard-tagged-actions">
-                            <button type="button" class="dashboard-tagged-btn" onclick="window.app_undoMissedCheckoutReview(${JSON.stringify(String(log.notificationId || ''))})">Undo</button>
+                            <button type="button" class="dashboard-tagged-btn" data-ts-action="undo-missed-checkout-review"(${JSON.stringify(String(log.notificationId || ''))})">Undo</button>
                         </div>
                     </div>
                 </div>
@@ -968,8 +1061,8 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
                             <span class="dashboard-tagged-pill pending">Pending</span>
                             ${log.notificationId ? `
                                 <div class="dashboard-tagged-actions">
-                                    <button type="button" class="dashboard-tagged-btn accept" onclick='window.app_reviewMissedCheckoutReasonFromNotification(-1, ${JSON.stringify(String(log.notificationId))}, "approved")'>Approve</button>
-                                    <button type="button" class="dashboard-tagged-btn reject" onclick='window.app_reviewMissedCheckoutReasonFromNotification(-1, ${JSON.stringify(String(log.notificationId))}, "rejected")'>Reject</button>
+                                    <button type="button" class="dashboard-tagged-btn accept" data-ts-action="review-missed-checkout" data-notification-id="${log.notificationId}" data-review-action="approved">Approve</button>
+                                    <button type="button" class="dashboard-tagged-btn reject" data-ts-action="review-missed-checkout" data-notification-id="${log.notificationId}" data-review-action="rejected">Reject</button>
                                 </div>
                             ` : '<span class="text-muted" style="font-size:0.7rem;">Notification sync pending</span>'}
                         </div>
@@ -995,7 +1088,7 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
                 `).join('')
         : '<div style="color:#9a3412; font-size:0.85rem;">No birthdays saved yet.</div>'}
         </div>
-        <button type="button" class="action-btn" onclick="window.location.hash='birthday-calendar'"><i class="fa-solid fa-cake-candles"></i> Open</button>
+        <button type="button" class="action-btn" data-ts-action="hash-navigate" data-hash="birthday-calendar"><i class="fa-solid fa-cake-candles"></i> Open</button>
     `;
 
     const renderBudgetHeadsBlock = (isExpanded = false) => `
@@ -1057,8 +1150,8 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
                                 </td>
                                 <td>
                                     ${isSystem ? '<span class="text-muted">System</span>' : `
-                                        <button type="button" class="dashboard-tagged-btn accept" onclick="window.app_saveBudgetHeadRow('${safeHtml(id)}', this)">Save</button>
-                                        ${String(head.parentId || '').trim() ? '' : `<button type="button" class="dashboard-tagged-btn" onclick="window.app_prefillBudgetHeadParent('${safeHtml(id)}')" style="margin-left:0.35rem;">Add Sub</button>`}
+                                        <button type="button" class="dashboard-tagged-btn accept" data-ts-action="save-budget-head" data-budget-head-id="${safeHtml(id)}">Save</button>
+                                        ${String(head.parentId || '').trim() ? '' : `<button type="button" class="dashboard-tagged-btn" data-ts-action="prefill-budget-parent" data-budget-head-id="${safeHtml(id)}" style="margin-left:0.35rem;">Add Sub</button>`}
                                     `}
                                 </td>
                             </tr>
@@ -1084,7 +1177,7 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
                 <div class="admin-kpi-pill"><div class="admin-kpi-pill-value">${staleUnallocated.length}</div><div class="admin-kpi-pill-label">Aged 2+ Days</div></div>
             </div>
             <div style="margin-bottom:0.4rem;">
-                <button type="button" class="action-btn secondary" onclick="window.AppReports?.exportComplianceExceptionsCSV?.({ days: 31, unresolvedOnly: true })">
+                <button type="button" class="action-btn secondary" data-ts-action="export-compliance-csv">
                     <i class="fa-solid fa-file-csv"></i> Export Open Issues
                 </button>
             </div>
@@ -1109,8 +1202,8 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
                                 <option value="__ADD_NEW__">+ Add new budget head</option>
                             </select>
                             ${row.sourceType === 'team_activity'
-                ? `<button type="button" class="dashboard-tagged-btn accept" onclick="window.app_assignBudgetHeadToTeamTask('${safeHtml(String(row.planId || ''))}', ${Number.isInteger(row.taskIndex) ? row.taskIndex : 'null'}, this)">Allocate</button>`
-                : `<button type="button" class="dashboard-tagged-btn accept" onclick="window.app_assignBudgetHeadToAttendance('${safeHtml(String(row.id || ''))}', this)">Allocate</button>`}
+                ? `<button type="button" class="dashboard-tagged-btn accept" data-ts-action="assign-budget-team-task" data-plan-id="${safeHtml(String(row.planId || ''))}" data-task-index="${Number.isInteger(row.taskIndex) ? row.taskIndex : 'null'}">Allocate</button>`
+                : `<button type="button" class="dashboard-tagged-btn accept" data-ts-action="assign-budget-attendance" data-attendance-id="${safeHtml(String(row.id || ''))}">Allocate</button>`}
                         </div>
                     </div>
                 `).join('') || '<div class="text-muted">No exceptions in recent sessions.</div>'}
@@ -1148,10 +1241,10 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
 
     const buildAdminCardModeControls = (id, title) => `
         <div class="admin-card-mode-controls" role="group" aria-label="${safeHtml(title)} view controls">
-            <button type="button" class="admin-card-mode-btn admin-card-mode-btn-original" onclick="window.app_toggleAdminCardMode('${id}', 'original', this)" aria-label="Show original size ${safeHtml(title)}">
+            <button type="button" class="admin-card-mode-btn admin-card-mode-btn-original" data-ts-action="admin-toggle-card-mode" data-card-id="${id}" data-mode="original" aria-label="Show original size ${safeHtml(title)}">
                 <i class="fa-solid fa-up-right-and-down-left-from-center"></i>
             </button>
-            <button type="button" class="admin-card-mode-btn admin-card-mode-btn-fullscreen" onclick="window.app_toggleAdminCardMode('${id}', 'fullscreen', this)" aria-label="Show fullscreen ${safeHtml(title)}">
+            <button type="button" class="admin-card-mode-btn admin-card-mode-btn-fullscreen" data-ts-action="admin-toggle-card-mode" data-card-id="${id}" data-mode="fullscreen" aria-label="Show fullscreen ${safeHtml(title)}">
                 <i class="fa-solid fa-expand"></i>
             </button>
         </div>
@@ -1383,16 +1476,16 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
                         <button type="button" data-close style="background:none; border:none; font-size:1.2rem; cursor:pointer;">&times;</button>
                     </div>
                     <form id="${modalId}-form" style="display:grid; gap:0.5rem;">
-                        <label style="display:grid; gap:0.35rem;">
-                            <span style="font-size:0.82rem; font-weight:700; color:#334155;">Code</span>
-                            <input name="code" value="${safeHtml(String(initialCode || ''))}" placeholder="OPS001" required style="padding:0.45rem; border:1px solid #cbd5e1; border-radius:8px;">
+                        <label class="adm-grid-row">
+                            <span class="adm-text-title">Code</span>
+                            <input name="code" value="${safeHtml(String(initialCode || ''))}" placeholder="OPS001" required class="adm-input">
                         </label>
-                        <label style="display:grid; gap:0.35rem;">
-                            <span style="font-size:0.82rem; font-weight:700; color:#334155;">Name</span>
-                            <input name="name" value="${safeHtml(String(initialName || ''))}" placeholder="Operations" required style="padding:0.45rem; border:1px solid #cbd5e1; border-radius:8px;">
+                        <label class="adm-grid-row">
+                            <span class="adm-text-title">Name</span>
+                            <input name="name" value="${safeHtml(String(initialName || ''))}" placeholder="Operations" required class="adm-input">
                         </label>
-                        <label style="display:grid; gap:0.35rem;">
-                            <span style="font-size:0.82rem; font-weight:700; color:#334155;">Parent Main Head (Optional)</span>
+                        <label class="adm-grid-row">
+                            <span class="adm-text-title">Parent Main Head (Optional)</span>
                             <select name="parentId" style="padding:0.45rem; border:1px solid #cbd5e1; border-radius:8px; background:#fff;">
                                 <option value="">Main Head (No Parent)</option>
                                 <option value="__CREATE_MAIN__">+ Create New Main Head</option>
@@ -1422,8 +1515,8 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
                         <div id="${modalId}-new-main-wrap" style="display:none; border:1px dashed #cbd5e1; border-radius:10px; padding:0.7rem; background:#f8fafc;">
                             <div style="font-size:0.78rem; font-weight:700; color:#334155; margin-bottom:0.5rem;">Create Parent Main Head</div>
                             <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.55rem;">
-                                <input name="newMainCode" placeholder="Parent code (e.g. FIN001)" style="padding:0.45rem; border:1px solid #cbd5e1; border-radius:8px;">
-                                <input name="newMainName" placeholder="Parent name (e.g. Finance)" style="padding:0.45rem; border:1px solid #cbd5e1; border-radius:8px;">
+                                <input name="newMainCode" placeholder="Parent code (e.g. FIN001)" class="adm-input">
+                                <input name="newMainName" placeholder="Parent name (e.g. Finance)" class="adm-input">
                             </div>
                         </div>
                         <div style="display:flex; gap:0.65rem; justify-content:flex-end; margin-top:0.4rem;">
@@ -1713,7 +1806,7 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
     };
 
     return `
-        <div class="dashboard-grid dashboard-modern dashboard-admin-view admin-grid-compact">
+        <div class="dashboard-grid dashboard-admin-view admin-grid-compact">
             ${cards.join('')}
         </div>`;
 }
@@ -1879,8 +1972,8 @@ export async function renderStaffAiMemorySheet(auditStartDate = null, auditEndDa
                         <span>To</span>
                         <input id="staff-ai-memory-end" type="date" value="${safeHtml(auditEndDate)}">
                     </label>
-                    <button type="button" class="action-btn secondary" onclick="window.app_refreshStaffAiMemorySheet?.()"><i class="fa-solid fa-arrows-rotate"></i> Refresh</button>
-                    <button type="button" class="action-btn secondary" onclick="window.location.hash='${backHash}'"><i class="fa-solid fa-arrow-left"></i> Back</button>
+                    <button type="button" class="action-btn secondary" data-ts-action="refresh-staff-ai-memory"><i class="fa-solid fa-arrows-rotate"></i> Refresh</button>
+                    <button type="button" class="action-btn secondary" data-ts-action="hash-navigate" data-hash="${backHash}"><i class="fa-solid fa-arrow-left"></i> Back</button>
                 </div>
             </section>
 

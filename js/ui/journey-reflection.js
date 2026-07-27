@@ -249,7 +249,7 @@ const isDashboardVisible = () => {
     try {
         const page = String(window.location.hash || '#dashboard').replace('#', '').trim() || 'dashboard';
         if (page === 'dashboard') return true;
-        return !!document.querySelector('.dashboard-grid.dashboard-modern');
+        return !!document.querySelector('.dashboard-staff-view, .dashboard-admin-view');
     } catch {
         return false;
     }
