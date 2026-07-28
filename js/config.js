@@ -106,5 +106,19 @@ export const AppConfig = {
             TARGET_USERNAMES: ['jomit_p', 'maria'],
             AUDIT_COLLECTION: 'system_audit_logs'
         }
+    },
+    DASHBOARD: {
+        TITLE: 'Attendance Command Center',
+        MAX_REFRESHES: 3,
+        WORKLOG_PAGE_SIZE: 25,
+        OVERDUE_PREVIEW_COUNT: 3,
+        LEAVE_REQUESTS_LIMIT: 5,
+        LEAVE_HISTORY_LIMIT: 8,
+        ACTIVITY_MONTHS_BACK: 8,
+        HERO_VERSION_BADGE: 'v5'
+    },
+    DASHBOARD_CUSTOMIZATION: {
+        DOC_PATH: 'settings/dashboard_customization',
+        SCHEMA_VERSION: 1
     }
 };

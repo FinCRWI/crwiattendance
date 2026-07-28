@@ -3435,8 +3435,28 @@ async function router() {
             modalContainer.insertAdjacentHTML('beforeend', AppUI.renderModals());
         }
 
-        // Show Loading State immediately
-        if (contentArea) contentArea.innerHTML = '<div class="loading-spinner"></div>';
+        // Hide all open modals (except checkout-modal) on route change
+        if (modalContainer) {
+            modalContainer.querySelectorAll('.modal-overlay:not(.gm-hidden)').forEach((m) => {
+                if (m.id !== 'checkout-modal') {
+                    m.style.display = 'none';
+                    m.classList.add('gm-hidden');
+                }
+            });
+        }
+
+        // Show skeleton loading state immediately
+        if (contentArea) {
+            const { showPageSkeleton } = await import('./ui/page-skeletons.js');
+            const skeleton = hash === 'dashboard'
+                ? (await import('./ui/dashboard-skeletons.js')).renderDashboardSkeletons()
+                : showPageSkeleton(hash);
+            if (skeleton) {
+                contentArea.innerHTML = skeleton;
+            } else {
+                contentArea.innerHTML = '<div class="loading-spinner"></div>';
+            }
+        }
 
         if (hash === 'dashboard') {
             contentArea.innerHTML = await AppUI.renderDashboard();
@@ -3695,6 +3715,9 @@ function startAdminRealtimeListener() {
     }
 }
 
+let minutesRealtimeDebounceTimer = null;
+let minutesRealtimePending = false;
+
 function startMinutesRealtimeListener() {
     if (!window.AppDB || !window.AppDB.listen) return;
     if (typeof minutesListenerUnsubscribe === 'function') {
@@ -3702,14 +3725,26 @@ function startMinutesRealtimeListener() {
         minutesListenerUnsubscribe = null;
     }
 
-    const refreshMinutesUI = async () => {
-        const currentHash = window.location.hash.slice(1) || 'dashboard';
-        if (currentHash !== 'minutes') return;
-        if (document.getElementById('minute-detail-modal')) return;
+    const debouncedRefresh = () => {
+        minutesRealtimePending = true;
+        if (minutesRealtimeDebounceTimer) clearTimeout(minutesRealtimeDebounceTimer);
+        minutesRealtimeDebounceTimer = setTimeout(async () => {
+            minutesRealtimeDebounceTimer = null;
+            if (!minutesRealtimePending) return;
+            minutesRealtimePending = false;
 
-        const page = document.getElementById('page-content');
-        if (!page) return;
-        page.innerHTML = await AppUI.renderMinutes();
+            const currentHash = window.location.hash.slice(1) || 'dashboard';
+            if (currentHash !== 'minutes') return;
+            if (document.getElementById('minute-detail-modal')) return;
+
+            if (typeof window.AppMinutes !== 'undefined' && window.AppMinutes.isMinutesDirtyState) {
+                return;
+            }
+
+            const page = document.getElementById('page-content');
+            if (!page) return;
+            page.innerHTML = await AppUI.renderMinutes();
+        }, 300);
     };
 
     const flags = (AppConfig && AppConfig.READ_OPT_FLAGS) || {};
@@ -3718,10 +3753,10 @@ function startMinutesRealtimeListener() {
             'minutes',
             [],
             { orderBy: [{ field: 'date', direction: 'desc' }], limit: 150 },
-            refreshMinutesUI
+            debouncedRefresh
         );
     } else {
-        minutesListenerUnsubscribe = window.AppDB.listen('minutes', refreshMinutesUI);
+        minutesListenerUnsubscribe = window.AppDB.listen('minutes', debouncedRefresh);
     }
 }
 
@@ -7807,7 +7842,7 @@ async function handleAddUser(e) {
 
 window.app_getPermissionsFromUI = (prefix) => {
     const permissions = {};
-    const modules = ['dashboard', 'leaves', 'users', 'attendance', 'reports', 'minutes', 'policies', 'birthday', 'letterPad'];
+    const modules = ['dashboard', 'leaves', 'users', 'attendance', 'reports', 'minutes', 'policies', 'birthday', 'letterPad', 'customize'];
     modules.forEach(m => {
         const viewCheck = document.getElementById(`${prefix}-perm-${m}-view`);
         const adminCheck = document.getElementById(`${prefix}-perm-${m}-admin`);
@@ -8974,7 +9009,7 @@ window.app_editUser = async (userId) => {
     setVal('#edit-user-uan', user.uan || user.UAN || '');
 
     // Populate permissions
-    const modules = ['dashboard', 'leaves', 'users', 'attendance', 'reports', 'minutes', 'policies', 'birthday', 'letterPad'];
+    const modules = ['dashboard', 'leaves', 'users', 'attendance', 'reports', 'minutes', 'policies', 'birthday', 'letterPad', 'customize'];
     const permissions = user.permissions || {};
     modules.forEach(m => {
         const val = permissions[m];

@@ -74,6 +74,13 @@ export function canAdminBirthdays(user = getCurrentUser()) {
         || hasPerm('birthday', 'admin', user);
 }
 
+export function canCustomizeDashboard(user = getCurrentUser()) {
+    if (!user) return false;
+    return isAdminUser(user)
+        || hasPerm('customize', 'admin', user)
+        || !!user.canCustomizeDashboard;
+}
+
 if (typeof window !== 'undefined') {
     window.app_isAdminUser = isAdminUser;
     window.app_canSeeAdminPanel = canSeeAdminPanel;
@@ -83,4 +90,5 @@ if (typeof window !== 'undefined') {
     window.app_canAccessStaffAiMemory = canAccessStaffAiMemory;
     window.app_canManageBirthdays = canManageBirthdays;
     window.app_canAdminBirthdays = canAdminBirthdays;
+    window.app_canCustomizeDashboard = canCustomizeDashboard;
 }

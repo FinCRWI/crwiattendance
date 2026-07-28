@@ -80,6 +80,7 @@ export class Analytics {
                     { field: 'date', operator: '<=', value: endIso }
                 ]);
             }
+            console.warn('[Analytics] queryMany unavailable — falling back to getAll attendance for range', startIso, endIso);
             const all = await this.db.getAll('attendance');
             return all.filter(l => l.date >= startIso && l.date <= endIso);
         });
@@ -598,7 +599,6 @@ export class Analytics {
                 else if (type === 'Sick Leave') { breakdown['Sick Leave']++; stats.unpaidLeaves++; }
                 else if (type === 'Casual Leave') breakdown['Casual Leave']++;
                 else if (type === 'Earned Leave') breakdown['Earned Leave']++;
-                else if (type === 'Earned Leave') breakdown['Earned Leave']++;
                 else if (type === 'Paid Leave') breakdown['Paid Leave']++;
                 else if (type === 'Maternity Leave') breakdown['Maternity Leave']++;
                 else if (type === 'Retreat Leave') breakdown['Retreat Leave']++;
@@ -635,7 +635,22 @@ export class Analytics {
 
     async getUserYearlyStats(userId) {
         const { start, end, label } = this.getFinancialYearDates();
-        const logs = await this.getAttendanceInRange(start, end, `yearly:${userId}`);
+
+        // Fetch in monthly chunks for better Firestore performance
+        const monthChunks = [];
+        const chunkStart = new Date(start);
+        while (chunkStart <= end) {
+            const monthEnd = new Date(chunkStart.getFullYear(), chunkStart.getMonth() + 1, 0);
+            const chunkEnd = monthEnd < end ? monthEnd : new Date(end);
+            monthChunks.push({ start: new Date(chunkStart), end: chunkEnd });
+            chunkStart.setMonth(chunkStart.getMonth() + 1);
+            chunkStart.setDate(1);
+        }
+        const chunkKey = `${start.toISOString().split('T')[0]}_${end.toISOString().split('T')[0]}`;
+        const allLogs = await Promise.all(
+            monthChunks.map((chunk, i) => this.getAttendanceInRange(chunk.start, chunk.end, `yearly:${userId}:${chunkKey}:${i}`))
+        );
+        const logs = allLogs.flat();
         const userLogs = logs.filter(l => l.userId === userId || l.user_id === userId);
 
         const breakdown = {
@@ -858,23 +873,28 @@ export class Analytics {
         const ttl = this.getTtls().attendanceSummary || 30000;
         const cacheKey = `analytics:heroShared:${startIso}:${endIso}`;
         return this.memoize(cacheKey, ttl, async () => {
-            const [logs, workPlans, activityRows, users] = await Promise.all([
+            const [logs, workPlans, users] = await Promise.all([
                 this.getAttendanceInRange(start, end, 'hero_yesterday_window'),
                 this.db.queryMany
                     ? this.db.queryMany('work_plans', [
                         { field: 'date', operator: '>=', value: startIso },
                         { field: 'date', operator: '<=', value: endIso }
                     ])
-                    : this.db.getAll('work_plans'),
-                this.getAllStaffActivities({
-                    mode: 'range',
-                    startIso,
-                    endIso,
-                    scope: 'work',
-                    sideEffects: false
-                }),
+                    : this.db.getAll('work_plans').then((rows) => (rows || []).filter((row) => {
+                        const d = String(row?.date || '');
+                        return d >= startIso && d <= endIso;
+                    })),
                 this.getUsersCached()
             ]);
+            const activityRows = await this.getAllStaffActivities({
+                mode: 'range',
+                startIso,
+                endIso,
+                scope: 'work',
+                sideEffects: false,
+                sharedLogs: logs,
+                sharedWorkPlans: workPlans
+            });
             return {
                 policy,
                 start,
@@ -1717,27 +1737,38 @@ export class Analytics {
 
             const shouldFetchAttendance = scope !== 'work';
             const shouldFetchManualWorkLogs = scope === 'work';
+            const hasSharedData = Array.isArray(normalized.sharedLogs) && Array.isArray(normalized.sharedWorkPlans);
             const [attendanceLogs, workPlans, users] = await Promise.all([
-                shouldFetchAttendance
-                    ? this.getAttendanceInRange(startDate, endDate, `staffAct:${startIso}:${endIso}:${scope}`)
-                    : shouldFetchManualWorkLogs
-                        ? this.getAttendanceInRange(startDate, endDate, `staffActManual:${startIso}:${endIso}`)
-                    : Promise.resolve([]),
-                this.db.queryMany
-                    ? this.memoize(
-                        `analytics:workPlans:${mode}:${scope}:${startIso}:${endIso}`,
-                        Math.max(
-                            30000,
-                            Number(this.getTtls().staffActivitiesReadMs || 0),
-                            Number(this.getTtls().attendanceSummary || 0),
-                            Number(this.getTtls().workPlansAllReadMs || 0)
-                        ),
-                        async () => this.db.queryMany('work_plans', [
-                            { field: 'date', operator: '>=', value: startIso },
-                            { field: 'date', operator: '<=', value: endIso }
-                        ])
-                    )
-                    : AppDB.getAll('work_plans'),
+                hasSharedData
+                    ? Promise.resolve(normalized.sharedLogs)
+                    : shouldFetchAttendance
+                        ? this.getAttendanceInRange(startDate, endDate, `staffAct:${startIso}:${endIso}:${scope}`)
+                        : shouldFetchManualWorkLogs
+                            ? this.getAttendanceInRange(startDate, endDate, `staffActManual:${startIso}:${endIso}`)
+                        : Promise.resolve([]),
+                hasSharedData
+                    ? Promise.resolve(normalized.sharedWorkPlans)
+                    : this.db.queryMany
+                        ? this.memoize(
+                            `analytics:workPlans:${mode}:${scope}:${startIso}:${endIso}`,
+                            Math.max(
+                                30000,
+                                Number(this.getTtls().staffActivitiesReadMs || 0),
+                                Number(this.getTtls().attendanceSummary || 0),
+                                Number(this.getTtls().workPlansAllReadMs || 0)
+                            ),
+                            async () => this.db.queryMany('work_plans', [
+                                { field: 'date', operator: '>=', value: startIso },
+                                { field: 'date', operator: '<=', value: endIso }
+                            ])
+                        )
+                        : (() => {
+                            console.warn('[Analytics] queryMany unavailable — falling back to getAll work_plans for staff activities');
+                            return AppDB.getAll('work_plans').then((rows) => (rows || []).filter((row) => {
+                                const d = String(row?.date || '');
+                                return d >= startIso && d <= endIso;
+                            }));
+                        })(),
                 this.getUsersCached()
             ]);
 

@@ -35,6 +35,48 @@ function sendJson(res, statusCode, payload) {
     res.end(JSON.stringify(payload));
 }
 
+function createFeastDevPlugin() {
+    let cachedIcal = null;
+    let cacheTime = 0;
+    const CACHE_TTL = 86400000;
+    async function fetchIcal() {
+        const upstream = await fetch('https://gcatholic.org/calendar/ics/2026-en-IN.ics', {
+            headers: { 'Accept': 'text/calendar' },
+            signal: AbortSignal.timeout(10000)
+        });
+        if (!upstream.ok) throw new Error('Upstream status ' + upstream.status);
+        cachedIcal = await upstream.text();
+        cacheTime = Date.now();
+    }
+    return {
+        name: 'feast-dev-proxy',
+        configureServer(server) {
+            fetchIcal().catch(() => {}); // pre-warm cache on startup
+            server.middlewares.use('/api/feast-proxy', async (req, res) => {
+                try {
+                    const now = Date.now();
+                    if (!cachedIcal || (now - cacheTime) > CACHE_TTL) {
+                        await fetchIcal();
+                    }
+                    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+                    res.setHeader('Access-Control-Allow-Origin', '*');
+                    res.setHeader('Cache-Control', 'public, max-age=86400');
+                    res.end(cachedIcal);
+                } catch (err) {
+                    if (cachedIcal) {
+                        res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+                        res.setHeader('Access-Control-Allow-Origin', '*');
+                        res.end(cachedIcal);
+                        return;
+                    }
+                    res.statusCode = 502;
+                    res.end('Feast proxy error: ' + (err?.message || err));
+                }
+            });
+        }
+    };
+}
+
 function createAssistantDevPlugin(runtimeEnv) {
     return {
         name: 'assistant-dev-api',
@@ -83,7 +125,7 @@ export default defineConfig({
     plugins: (() => {
         const runtimeEnv = loadEnv(process.env.NODE_ENV || 'development', process.cwd(), '');
         Object.assign(process.env, runtimeEnv);
-        return [createAssistantDevPlugin({ ...process.env, ...runtimeEnv })];
+        return [createFeastDevPlugin(), createAssistantDevPlugin({ ...process.env, ...runtimeEnv })];
     })(),
     define: {
         __APP_BUILD_META__: JSON.stringify(buildMeta)

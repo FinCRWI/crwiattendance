@@ -324,6 +324,16 @@ export async function deleteMinute(id) {
     }
 }
 
+let _isMinutesDirty = false;
+
+function isMinutesDirtyState() {
+    return _isMinutesDirty;
+}
+
+function setMinutesDirtyState(dirty) {
+    _isMinutesDirty = !!dirty;
+}
+
 const AppMinutes = {
     getMinutes,
     addMinute,
@@ -332,7 +342,9 @@ const AppMinutes = {
     deleteMinute,
     requestAccess,
     handleAccessRequest,
-    updateActionItemStatus
+    updateActionItemStatus,
+    isMinutesDirtyState,
+    setMinutesDirtyState
 };
 
 if (typeof window !== 'undefined') {

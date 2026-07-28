@@ -1391,6 +1391,17 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
         expandedHtml: renderSimulationAuditBlock(true)
     });
 
+    if (window.app_canCustomizeDashboard?.()) {
+        const renderCustomizeBlock = () => window.app_renderCustomizationWidget?.(window.app_dashboardCustomization?._settings) || '';
+        pushCard({
+            id: 'dashboard-customization',
+            title: 'Dashboard Customization',
+            className: 'admin-section-card',
+            compactHtml: renderCustomizeBlock(),
+            expandedHtml: renderCustomizeBlock()
+        });
+    }
+
     window._adminCardTemplates = cardTemplates;
     window._adminCardModeState = {};
 

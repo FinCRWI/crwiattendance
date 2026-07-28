@@ -6,7 +6,6 @@
 import { safeHtml, safeUrl, timeAgo } from './helpers.js';
 import { renderStarRating, renderTaskStatusBadge } from './common.js';
 import { renderYearlyPlan } from './team-schedule.js';
-import { AppJourneyReflection } from '../modules/journey-reflection.js';
 import { renderJourneyReflectionCard } from './journey-reflection.js';
 import { AppConfig } from '../config.js';
 import {
@@ -26,6 +25,7 @@ import {
   applyDashboardCardMode
 } from './dashboard-card-mode.js';
 import { onAction } from '../utils/action-router.js';
+import { getTodayFeast, loadFeastImage, getLiturgicalSeasonColor, getLiturgicalSeasonBg, getRankLabel } from '../modules/feasts.js';
 
 const escapeJsSingleQuote = (value) => String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 const WORKLOG_PAGE_SIZE = 25;
@@ -733,14 +733,14 @@ export function renderHeroCard(heroData, heroMeta = {}) {
     let refreshButtonHTML = '';
     if (isFullAdmin) {
         const refreshCount = Number(heroMeta?.heroRefreshCount || 0);
-        const MAX_REFRESHES = 3;
-        if (refreshCount >= MAX_REFRESHES) {
+        const maxRefreshes = AppConfig?.DASHBOARD?.MAX_REFRESHES || 3;
+        if (refreshCount >= maxRefreshes) {
             refreshButtonHTML = `
-                <button class="hero-refresh-btn" disabled title="Max daily refreshes (${MAX_REFRESHES}) reached">
+                <button class="hero-refresh-btn" disabled title="Max daily refreshes (${maxRefreshes}) reached">
                     <i class="fa-solid fa-arrows-rotate"></i>
                 </button>`;
         } else {
-            const remaining = MAX_REFRESHES - refreshCount;
+            const remaining = maxRefreshes - refreshCount;
             refreshButtonHTML = `
                 <button class="hero-refresh-btn" data-ts-action="refresh-hero" title="Recalculate and refresh hero (${remaining} refresh${remaining === 1 ? '' : 'es'} remaining today)">
                     <i class="fa-solid fa-arrows-rotate"></i>
@@ -1167,6 +1167,14 @@ function renderHeroTaskDetailsModalContent(userRow, bucketKey) {
 export function renderActivityLog(allStaffLogs) {
     const state = getStaffActivityState();
     state.logs = Array.isArray(allStaffLogs) ? allStaffLogs : [];
+    const viewMode = state.activityViewMode || 'team';
+    const currentUser = window.AppAuth.getUser();
+    const filteredLogs = viewMode === 'my'
+        ? state.logs.filter(log => {
+            const logUserId = log.userId || log.user_id || log.staffId || '';
+            return logUserId === currentUser?.id;
+        })
+        : state.logs;
 
     // Defer side effects
     setTimeout(() => {
@@ -1180,7 +1188,13 @@ export function renderActivityLog(allStaffLogs) {
     return `
         <div class="card dashboard-team-activity-card">
             <div class="dashboard-team-activity-head">
-                <div style="display:flex; align-items:center; gap:0.5rem;"><h4>Team Activity</h4></div>
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                    <h4>${viewMode === 'my' ? 'My Activity' : 'Team Activity'}</h4>
+                    <div class="dashboard-activity-toggle" style="display:flex;gap:0;margin-left:0.5rem;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0;">
+                        <button onclick="window.app_setStaffActivityView('my')" class="dashboard-activity-toggle-btn ${viewMode === 'my' ? 'active' : ''}" style="padding:4px 10px;font-size:0.75rem;border:none;cursor:pointer;background:${viewMode === 'my' ? '#6366f1' : '#f8fafc'};color:${viewMode === 'my' ? 'white' : '#475569'};font-weight:600;">My</button>
+                        <button onclick="window.app_setStaffActivityView('team')" class="dashboard-activity-toggle-btn ${viewMode === 'team' ? 'active' : ''}" style="padding:4px 10px;font-size:0.75rem;border:none;cursor:pointer;background:${viewMode === 'team' ? '#6366f1' : '#f8fafc'};color:${viewMode === 'team' ? 'white' : '#475569'};font-weight:600;">Team</button>
+                    </div>
+                </div>
                 <span id="staff-activity-range-label">${safeHtml(selectedMonthLabel)}</span>
             </div>
             <div class="dashboard-team-activity-filters dashboard-team-activity-filters-compact">
@@ -1198,7 +1212,59 @@ export function renderActivityLog(allStaffLogs) {
                 </select>
             </div>
             <div id="staff-activity-list" class="dashboard-team-activity-list dashboard-team-activity-list-split">
-                ${renderStaffActivityListSplit(state.logs, state.sortKey)}
+                ${renderStaffActivityListSplit(filteredLogs, state.sortKey)}
+            </div>
+        </div>`;
+}
+
+export function renderCustomizationWidget(settings) {
+    const s = settings || window.app_dashboardCustomization?.getDefaults() || {};
+    const wv = s.widgetVisibility || {};
+    const density = s.layoutDensity || 'standard';
+    const mirror = !!s.globalAdminMirror;
+
+    const widgetIds = [
+        ['feast', 'Feast Widget'],
+        ['teamActivity', 'Team Activity'],
+        ['hero', 'Hero of the Week'],
+        ['staffLeaveSummary', 'Staff Leave Summary'],
+        ['journeyReflection', 'Journey Reflection'],
+        ['statsRow', 'Stats Row']
+    ];
+
+    const toggleRows = widgetIds.map(([key, label]) => `
+        <label class="dashboard-customize-toggle">
+            <input type="checkbox" data-customize-key="widgetVisibility.${key}" ${wv[key] !== false ? 'checked' : ''} onchange="window.app_saveDashboardCustomization()">
+            <span>${label}</span>
+        </label>`).join('');
+
+    return `
+        <div class="dashboard-customization-widget">
+            <h3 class="dashboard-customize-heading">Dashboard Customization</h3>
+            <div class="dashboard-customize-section">
+                <label class="dashboard-customize-label">Widget Visibility</label>
+                <div class="dashboard-customize-grid">
+                    ${toggleRows}
+                </div>
+            </div>
+            <div class="dashboard-customize-section">
+                <label class="dashboard-customize-label">Layout Density</label>
+                <div class="dashboard-customize-pills">
+                    <label class="dashboard-customize-pill ${density === 'standard' ? 'active' : ''}">
+                        <input type="radio" name="customize-density" value="standard" ${density === 'standard' ? 'checked' : ''} onchange="window.app_dashboardCustomization?.saveSettings({ ...window.app_dashboardCustomization?._settings, layoutDensity: 'standard' })">
+                        Standard
+                    </label>
+                    <label class="dashboard-customize-pill ${density === 'compact' ? 'active' : ''}">
+                        <input type="radio" name="customize-density" value="compact" ${density === 'compact' ? 'checked' : ''} onchange="window.app_dashboardCustomization?.saveSettings({ ...window.app_dashboardCustomization?._settings, layoutDensity: 'compact' })">
+                        Compact
+                    </label>
+                </div>
+            </div>
+            <div class="dashboard-customize-section">
+                <label class="dashboard-customize-toggle">
+                    <input type="checkbox" data-customize-key="globalAdminMirror" ${mirror ? 'checked' : ''} onchange="window.app_saveDashboardCustomization()">
+                    <span>Apply customization to Global Admin dashboard</span>
+                </label>
             </div>
         </div>`;
 }
@@ -1545,12 +1611,46 @@ function buildStatsDetailBuckets(logs, range) {
     };
 }
 
+export function renderStaffLeaveSummary(leaves, user) {
+    if (!leaves || leaves.length === 0 || !user) return '';
+    const myLeaves = leaves.filter(l => (l.userId || l.user_id) === user.id);
+    if (myLeaves.length === 0) return '';
+    const recentLeaves = myLeaves
+        .sort((a, b) => new Date(b.appliedOn || b.startDate || 0) - new Date(a.appliedOn || a.startDate || 0))
+        .slice(0, 5);
+    return `
+        <div class="card full-width dashboard-staff-leave-summary">
+            <div class="dashboard-tagged-head">
+                <h4>My Leave Status</h4>
+                <span>${myLeaves.length} total request${myLeaves.length !== 1 ? 's' : ''}</span>
+            </div>
+            <div class="dashboard-tagged-list">
+                ${recentLeaves.map(l => {
+                    const status = l.status || 'Pending';
+                    const color = status === 'Approved' ? '#166534' : status === 'Rejected' ? '#b91c1c' : '#854d0e';
+                    return `<div class="dashboard-tagged-item">
+                        <div class="dashboard-tagged-main">
+                            <div class="dashboard-tagged-title">${safeHtml(l.type || 'Leave')}</div>
+                            <div class="dashboard-tagged-desc">${l.startDate || ''} to ${l.endDate || ''} - ${l.daysCount || '?'} day(s)</div>
+                        </div>
+                        <span class="dashboard-tagged-status" style="color:${color};font-weight:600;font-size:0.8rem;">${status}</span>
+                    </div>`;
+                }).join('')}
+            </div>
+            <a href="#leaves" class="dashboard-view-all-link" style="display:block;text-align:center;padding:0.5rem;color:#6366f1;font-weight:600;font-size:0.85rem;">View All Leaves</a>
+        </div>`;
+}
+
 export function renderLeaveRequests(leaves, workFromHomeEntries = []) {
     const hasLeaves = Array.isArray(leaves) && leaves.length > 0;
     const hasWfh = Array.isArray(workFromHomeEntries) && workFromHomeEntries.length > 0;
 
     if (!hasLeaves && !hasWfh) {
-        return ''; // Don't show empty section to users without access
+        return `<div class="dashboard-empty-state">
+            <i class="fa-solid fa-check-circle"></i>
+            <p>No pending leave requests</p>
+            <span>All leave requests have been reviewed</span>
+        </div>`;
     }
 
     const leaveRows = hasLeaves
@@ -1600,7 +1700,11 @@ export function renderLeaveRequests(leaves, workFromHomeEntries = []) {
 }
 export function renderMissedCheckoutRequests(items) {
     if (!items || items.length === 0) {
-        return ''; // Don't show empty section to users without access
+        return `<div class="dashboard-empty-state">
+            <i class="fa-solid fa-clock"></i>
+            <p>No missed checkout requests</p>
+            <span>All caught up!</span>
+        </div>`;
     }
 
     return `
@@ -1636,14 +1740,12 @@ export function renderLeaveHistory(leaves, options = {}) {
     const canUndo = options.canUndo === true;
 
     if (!leaves || leaves.length === 0) {
-        return ''; // Don't show empty section to users without access
+        return `<div class="dashboard-empty-state">
+            <i class="fa-solid fa-calendar-check"></i>
+            <p>No leave history</p>
+            <span>No leave records found for this period</span>
+        </div>`;
     }
-
-    const statusColor = (status) => {
-        if (status === 'Approved') return '#166534';
-        if (status === 'Rejected') return '#b91c1c';
-        return '#854d0e';
-    };
 
     return `
         <div class="card dashboard-leave-history-card">
@@ -1686,6 +1788,31 @@ export function renderNotificationPanel(_notifications, _history) {
 export function renderTaggedItems(_notifications) {
     // Tagged items are intentionally shown only in the notification drawer.
     return '';
+}
+
+function buildStaffSelectorBox(allUsers, user, targetStaffId) {
+    const staffOptions = (allUsers || [])
+        .filter(u => u.id !== user.id)
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(u => `<option value="${u.id}" ${u.id === targetStaffId ? 'selected' : ''}>${safeHtml(u.name)}</option>`)
+        .join('');
+    const isActive = targetStaffId !== user.id;
+    return `
+        <div class="dashboard-viewing-box">
+            <div class="dashboard-viewing-inner">
+                <i class="fa-solid fa-users-viewfinder dashboard-viewing-icon"></i>
+                <div class="dashboard-viewing-meta">
+                    <div class="dashboard-viewing-head">
+                        <div class="dashboard-viewing-label">Viewing Summary For</div>
+                        ${isActive ? '<span class="dashboard-viewing-state">STAFF VIEW ACTIVE</span>' : ''}
+                    </div>
+                    <select onchange="window.app_changeSummaryStaff(this.value)" class="dashboard-viewing-select">
+                        <option value="${user.id}">My Own Summary</option>
+                        <optgroup label="Staff Members">${staffOptions}</optgroup>
+                    </select>
+                </div>
+            </div>
+        </div>`;
 }
 
 export function renderStaffDirectory(allUsers, _notifications, currentUser) {
@@ -1756,8 +1883,23 @@ export async function renderDashboard() {
     const yesterdayStr = dateKeys.yesterdayKey;
     const targetStaffId = (isAdmin && window.app_selectedSummaryStaffId) ? window.app_selectedSummaryStaffId : user.id;
 
+    const customizationSettings = await window.app_dashboardCustomization?.loadSettings?.() || null;
+
+    const shouldApplyCustomization = customizationSettings && window.app_canCustomizeDashboard?.(user) && (!user.isAdmin || customizationSettings.globalAdminMirror);
+    const wv = shouldApplyCustomization ? (customizationSettings.widgetVisibility || {}) : {};
+    const wvIf = (key, html) => wv[key] !== false ? html : '';
+    const densityClass = shouldApplyCustomization && customizationSettings.layoutDensity === 'compact' ? ' dashboard-density-compact' : '';
+
     console.time('DashboardFetch');
     markPerf('dashboard:fetch:start');
+
+    // Show skeleton loading state immediately while data fetches
+    const { renderDashboardSkeletons } = await import('./dashboard-skeletons.js');
+    const skeletonTarget = document.getElementById('page-content');
+    if (skeletonTarget && !skeletonTarget.dataset.hasSkeletons) {
+        skeletonTarget.dataset.hasSkeletons = '1';
+        skeletonTarget.innerHTML = renderDashboardSkeletons();
+    }
 
     const sharedSummaryTask = window.AppDB.getOrCreateDailySummary
         ? window.AppDB.getOrCreateDailySummary({
@@ -1772,14 +1914,8 @@ export async function renderDashboard() {
         })
         : null;
 
-    // Race the shared summary against a 1.5s timeout so the dashboard
-    // does not stall on slow generation; the async block below catches up.
-    const dailySummaryPromise = sharedSummaryTask
-        ? Promise.race([
-            sharedSummaryTask,
-            new Promise(resolve => setTimeout(() => resolve(null), 1500))
-        ])
-        : Promise.resolve(null);
+    // Use the full summary promise directly (skeleton loading handles the wait UX)
+    const dailySummaryPromise = sharedSummaryTask || Promise.resolve(null);
 
     // Refresh at midnight
     if (!window._dashboardRefreshScheduled) {
@@ -1838,7 +1974,7 @@ export async function renderDashboard() {
     const currentWeekRange = getWeekRange(leaveHistoryDate);
 
     // Parallel Fetch
-    const [status, logs, monthlyStats, yearlyStats, calendarPlans, pendingLeaves, allUsers, collaborations, allLeaves, dailySummary, minutesData, attendanceLogs, weeklyAttendanceLogs, currentWeekWorkPlans] = await Promise.all([
+    const [status, logs, monthlyStats, yearlyStats, calendarPlans, pendingLeaves, allUsers, collaborations, allLeaves, dailySummary, minutesData, attendanceLogs, weeklyAttendanceLogs, currentWeekWorkPlans, journeyReflectionState] = await Promise.all([
         window.AppAttendance.getStatus(),
         window.AppAttendance.getLogs(targetStaffId, { limit: 200 }),
         window.AppAnalytics.getUserMonthlyStats(targetStaffId),
@@ -1850,7 +1986,17 @@ export async function renderDashboard() {
             : window.AppDB.getAll('users'),
         window.AppCalendar ? window.AppCalendar.getCollaborations(targetStaffId) : Promise.resolve([]),
         window.app_hasPerm('leaves', 'view')
-            ? window.AppDB.getAll('leaves')
+            ? (() => {
+                const leavesThirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                return window.AppDB.queryMany
+                    ? window.AppDB.queryMany('leaves', [
+                        { field: 'createdAt', operator: '>=', value: leavesThirtyDaysAgo }
+                    ])
+                    : window.AppDB.getAll('leaves').then((rows) => (rows || []).filter((row) => {
+                        const created = String(row?.createdAt || row?.date || '');
+                        return created >= leavesThirtyDaysAgo;
+                    }));
+            })()
             : Promise.resolve([]),
         dailySummaryPromise,
         window.AppMinutes ? window.AppMinutes.getMinutes() : Promise.resolve([]),
@@ -1878,7 +2024,13 @@ export async function renderDashboard() {
             : window.AppDB.getAll('work_plans').then((rows) => (rows || []).filter((row) => {
                 const d = String(row?.date || '');
                 return d >= currentWeekRange.startKey && d <= currentWeekRange.endKey;
-            }))
+            })),
+        window.AppJourneyReflection ? window.AppJourneyReflection.buildDashboardState({
+            viewerUser: user,
+            targetUserId: targetStaffId,
+            targetUserName: user.name,
+            dateKey: todayStr
+        }) : Promise.resolve(null)
     ]);
     markPerf('dashboard:fetch:end');
     measurePerf('dashboard:fetch', 'dashboard:fetch:start', 'dashboard:fetch:end');
@@ -1895,35 +2047,16 @@ export async function renderDashboard() {
     const initialHeroBundle = setDashboardHeroBundle(heroData, dailySummary?.heroLeaderboard || null, heroMeta);
     heroData = initialHeroBundle.heroData;
 
-    // If the 1.5s race timed out, fetch team activities from the full summary
-    // or directly — retry with DOM check so it doesn't silently exit.
+    // If daily summary didn't include team activities, fetch them after render
     if (!dailySummary || !Array.isArray(dailySummary.teamActivityPreview)) {
-        const retryRefresh = (attempts = 10) => {
-            setTimeout(() => {
-                refreshStaffActivityWidget(true).catch(() => {
-                    if (attempts > 0) retryRefresh(attempts - 1);
-                });
-            }, 200);
-        };
-        retryRefresh();
+        setTimeout(() => {
+            refreshStaffActivityWidget(true).catch(() => {});
+        }, 500);
     }
 
 
-    // If the 1.5s race timed out and heroData is null, wait for the shared
-    // summary task to finish and patch the hero slot when it arrives.
+    // If heroData is null (summary still generating), wait for it and patch when ready
     if (heroData == null && sharedSummaryTask) {
-        const replaceHeroSlot = (html) => {
-            const attemptPatch = (retries) => {
-                const slot = document.querySelector('.hero-slot');
-                if (slot) {
-                    slot.outerHTML = html;
-                    setTimeout(() => { initDashboardCardControls(); attachHeroCardHandlers(); }, 0);
-                } else if (retries > 0) {
-                    setTimeout(() => attemptPatch(retries - 1), 100);
-                }
-            };
-            attemptPatch(20); // Retry for up to 2 seconds
-        };
         sharedSummaryTask.then((ds) => {
             const latestHero = ds?.hero || null;
             const latestLeaderboard = ds?.heroLeaderboard || null;
@@ -1934,14 +2067,21 @@ export async function renderDashboard() {
                 heroRefreshCount: Number(ds?.heroRefreshCount || 0)
             };
             const bundle = setDashboardHeroBundle(latestHero, latestLeaderboard, updatedMeta);
-            replaceHeroSlot(renderHeroCard(bundle.heroData, updatedMeta));
+            const slot = document.querySelector('.hero-slot');
+            if (slot) {
+                slot.outerHTML = renderHeroCard(bundle.heroData, updatedMeta);
+                setTimeout(() => { initDashboardCardControls(); attachHeroCardHandlers(); }, 0);
+            }
         }).catch((err) => {
             console.warn('Hero shared summary deferred load failed:', err);
-            replaceHeroSlot(renderHeroCard({
-                state: 'fetch_error',
-                reason: 'Hero stats are temporarily unavailable.',
-                source: 'shared_error'
-            }, heroMeta));
+            const slot = document.querySelector('.hero-slot');
+            if (slot) {
+                slot.outerHTML = renderHeroCard({
+                    state: 'fetch_error',
+                    reason: 'Hero stats are temporarily unavailable.',
+                    source: 'shared_error'
+                }, heroMeta);
+            }
         });
     }
 
@@ -1973,12 +2113,6 @@ export async function renderDashboard() {
         displayUser,
         currentWeekRange
     );
-    const journeyReflectionState = await AppJourneyReflection.buildDashboardState({
-        viewerUser: user,
-        targetUserId: targetStaffId,
-        targetUserName: displayUser?.name || user.name,
-        dateKey: todayStr
-    });
     const journeyReflectionHTML = renderJourneyReflectionCard(journeyReflectionState);
     const isReadOnlyView = isAdmin && !isViewingSelf && !isFullAdmin;
     const now = new Date();
@@ -2126,6 +2260,7 @@ export async function renderDashboard() {
     let statsRowHTML = '';
     const primaryRowThirdCard = renderActivityLog(staffActivities);
     const renderYearlyPlanHTML = renderYearlyPlan(calendarPlans);
+    const feastWidgetHTML = `<div class="dashboard-feast-widget" id="dashboard-feast-widget"><div class="dashboard-feast-widget-body"><div class="dashboard-feast-widget-text"><div class="dashboard-feast-widget-label">Today's Feast</div><div class="dashboard-feast-widget-name" id="dashboard-feast-name">Loading...</div><div class="dashboard-feast-widget-type" id="dashboard-feast-type"></div></div><img class="dashboard-feast-widget-img" id="dashboard-feast-img" alt="" style="display:none"></div></div>`;
     if (canViewAdminSections) {
         const hasExplicitSelection = !!window.app_selectedSummaryStaffId && window.app_selectedSummaryStaffId !== user.id;
         const weekRange = getWeekRange(leaveHistoryDate);
@@ -2150,30 +2285,35 @@ export async function renderDashboard() {
 
         detailSectionHTML = `
                     <div class="dashboard-detail-section" data-zone-id="detailSection">
-                        ${renderLeaveRequests(pendingLeaves, workFromHomeRows)}
-                        ${renderMissedCheckoutRequests(missedCheckoutRequests)}
-                        ${historyHTML}
-                        ${heroHTML}
-                        ${primaryRowThirdCard}
-                        ${journeyReflectionHTML}
+                        ${wvIf('feast', feastWidgetHTML)}
+                        ${isFullAdmin ? `<div class="dashboard-admin-actions-row">
+                            ${renderLeaveRequests(pendingLeaves, workFromHomeRows)}
+                            ${renderMissedCheckoutRequests(missedCheckoutRequests)}
+                            ${historyHTML}
+                        </div>` : ''}
+                        ${wvIf('hero', heroHTML)}
+                        ${wvIf('teamActivity', primaryRowThirdCard)}
+                        ${wvIf('journeyReflection', journeyReflectionHTML)}
                     </div>`;
-        statsRowHTML = `
+        statsRowHTML = wvIf('statsRow', `
             <div class="dashboard-stats-row" data-zone-id="statsRow">
                 ${renderStatsCard(isViewingSelf ? monthlyStats.label : `${monthlyStats.label} - ${targetStaff?.name || 'Staff'}`, isViewingSelf ? 'Monthly Stats' : 'Viewing Staff Monthly Stats', monthlyStats, 'monthly')}
                 ${renderStatsCard('Yearly Summary', isViewingSelf ? yearlyStats.label : `${yearlyStats.label} for ${targetStaff?.name || 'Staff'}`, yearlyStats, 'yearly')}
-            </div>`;
+            </div>`);
     } else {
         detailSectionHTML = `
                     <div class="dashboard-detail-section" data-zone-id="detailSection">
-                        ${heroHTML}
-                        ${primaryRowThirdCard}
-                        ${journeyReflectionHTML}
+                        ${wvIf('feast', feastWidgetHTML)}
+                        ${wvIf('teamActivity', primaryRowThirdCard)}
+                        ${wvIf('staffLeaveSummary', renderStaffLeaveSummary(allLeaves, user))}
+                        ${wvIf('hero', heroHTML)}
+                        ${wvIf('journeyReflection', journeyReflectionHTML)}
                     </div>`;
-        statsRowHTML = `
+        statsRowHTML = wvIf('statsRow', `
             <div class="dashboard-stats-row" data-zone-id="statsRow">
                 ${renderStatsCard(monthlyStats.label, 'Monthly Stats', monthlyStats, 'monthly')}
                 ${renderStatsCard('Yearly Summary', yearlyStats.label, yearlyStats, 'yearly')}
-            </div>`;
+            </div>`);
     }
 
     const updateState = (window.app_getReleaseUpdateState && window.app_getReleaseUpdateState()) || { active: false };
@@ -2190,32 +2330,71 @@ export async function renderDashboard() {
     setTimeout(() => initWorklogAutoScroll(document), 0);
     setTimeout(() => initDashboardCardControls(), 0);
 
+    // Reverse geocode location display (deferred, non-blocking)
+    setTimeout(() => {
+        const locEl = document.getElementById('location-text');
+        if (!locEl) return;
+        const lat = locEl.dataset.lat;
+        const lng = locEl.dataset.lng;
+        if (!lat || !lng) return;
+        const cacheKey = `geocode:${lat}:${lng}`;
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached) {
+            const span = locEl.querySelector('span');
+            if (span) span.textContent = cached;
+            return;
+        }
+        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18`, {
+            headers: { 'Accept-Language': 'en' }
+        }).then(r => r.json()).then(data => {
+            const addr = data?.address;
+            if (!addr) return;
+            const parts = [addr.road, addr.neighbourhood, addr.city || addr.town || addr.village, addr.state].filter(Boolean);
+            const address = parts.join(', ');
+            if (address) {
+                sessionStorage.setItem(cacheKey, address);
+                const span = locEl.querySelector('span');
+                if (span) span.textContent = address;
+            }
+        }).catch(() => {});
+    }, 500);
+
+    // Fetch today's Catholic feast (deferred, non-blocking)
+    setTimeout(() => {
+        const widget = document.getElementById('dashboard-feast-widget');
+        const nameEl = document.getElementById('dashboard-feast-name');
+        const typeEl = document.getElementById('dashboard-feast-type');
+        const imgEl = document.getElementById('dashboard-feast-img');
+        if (!widget || !nameEl) return;
+        getTodayFeast().then(feast => {
+            if (!feast || !feast.name) { widget.style.display = 'none'; return; }
+            const season = feast.season || 'Ordinary Time';
+            const color = getLiturgicalSeasonColor(season);
+            const bg = getLiturgicalSeasonBg(season);
+            const rankLabel = getRankLabel(feast.rank);
+            nameEl.textContent = feast.name;
+            if (typeEl) typeEl.textContent = rankLabel ? `${rankLabel} · ${season}` : season;
+            widget.style.background = bg;
+            widget.style.borderLeftColor = color;
+            widget.style.display = 'block';
+            if (imgEl) loadFeastImage(feast.name, imgEl);
+        }).catch(() => { widget.style.display = 'none'; });
+    }, 0);
+
     markPerf('dashboard:render:end');
     measurePerf('dashboard:render', 'dashboard:render:start', 'dashboard:render:end');
+
+    // Clear skeleton loading state
+    const skeletonClearTarget = document.getElementById('page-content');
+    if (skeletonClearTarget) delete skeletonClearTarget.dataset.hasSkeletons;
 
     const viewportMode = typeof window !== 'undefined' && window.innerWidth < 768 ? 'mobile' : 'desktop';
     const todayDateStr = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     return `
-        <div class="dashboard-grid dashboard-staff-view modern-dashboard" data-viewport="${viewportMode}">
+        <div class="dashboard-grid dashboard-staff-view modern-dashboard${densityClass}" data-viewport="${viewportMode}">
             ${notifHTML}
             ${taggedHTML}
             ${staffViewBannerHTML}
-
-            <!-- ── Modern Welcome Header ── -->
-            <div class="modern-dashboard-header full-width">
-                <div class="modern-header-content">
-                    <div>
-                        <div class="modern-header-greeting">Welcome back, ${user.name.split(' ')[0]}</div>
-                        <h2 class="modern-header-title">Attendance Command Center</h2>
-                    </div>
-                    <div class="modern-header-meta">
-                        <div class="modern-header-date">${todayDateStr}</div>
-                        <button class="${updateState.active ? 'dashboard-refresh-link is-update-pending' : 'dashboard-refresh-link'}" onclick="window.app_checkForSystemUpdate()" title="${updateState.active ? 'Update available. Click to refresh into the new version.' : 'Check for System Update'}">
-                            ${updateState.active ? 'System update available' : 'Check for System Update'}
-                        </button>
-                    </div>
-                </div>
-            </div>
 
             <!-- ── Hero Card (full width) ── -->
             <div class="card full-width dashboard-hero-card">
@@ -2225,11 +2404,21 @@ export async function renderDashboard() {
                     <div class="dashboard-hero-row">
                         <div class="dashboard-hero-copy">
                             ${isAdmin ? `<div class="dashboard-hero-eyebrow">Executive Overview</div>` : ''}
-                            <h2 class="dashboard-hero-title">${todayDateStr}</h2>
-                            ${isAdmin && user.rating !== undefined ? `<div class="dashboard-hero-chip-row"><div class="dashboard-hero-chip"><span class="dashboard-hero-chip-label">Your Rating:</span>${renderStarRating(user.rating, true)}</div>${user.completionStats ? `<div class="dashboard-hero-chip"><i class="fa-solid fa-check-circle dashboard-hero-chip-icon"></i><span>${(user.completionStats.completionRate * 100).toFixed(0)}% Complete</span></div>` : ''}</div>` : ''}
+                            <div class="dashboard-hero-welcome">Welcome back, ${user.name.split(' ')[0]}</div>
+                            <h2 class="dashboard-hero-title">${AppConfig?.DASHBOARD?.TITLE || 'Attendance Command Center'}</h2>
+                            ${user.rating !== undefined || user.completionStats ? `<div class="dashboard-hero-chip-row">
+                                ${user.rating !== undefined ? `<div class="dashboard-hero-chip"><span class="dashboard-hero-chip-label">Your Rating:</span>${renderStarRating(user.rating, true)}</div>` : ''}
+                                ${user.completionStats ? `<div class="dashboard-hero-chip"><i class="fa-solid fa-check-circle dashboard-hero-chip-icon"></i><span>${(user.completionStats.completionRate * 100).toFixed(0)}% Complete</span></div>` : ''}
+                            </div>` : ''}
                         </div>
                         <div class="dashboard-hero-aside">
-                            ${isAdmin ? `<div class="dashboard-viewing-box"><div class="dashboard-viewing-inner"><i class="fa-solid fa-users-viewfinder dashboard-viewing-icon"></i><div class="dashboard-viewing-meta"><div class="dashboard-viewing-head"><div class="dashboard-viewing-label">Viewing Summary For</div>${targetStaffId !== user.id ? '<span class="dashboard-viewing-state">STAFF VIEW ACTIVE</span>' : ''}</div><select onchange="window.app_changeSummaryStaff(this.value)" class="dashboard-viewing-select"><option value="${user.id}">My Own Summary</option><optgroup label="Staff Members">${(allUsers || []).filter(u => u.id !== user.id).sort((a, b) => a.name.localeCompare(b.name)).map(u => `<option value="${u.id}" ${u.id === targetStaffId ? 'selected' : ''}>${u.name}</option>`).join('')}</optgroup></select></div></div></div>` : ''}
+                            ${isFullAdmin ? buildStaffSelectorBox(allUsers, user, targetStaffId) : ''}
+                            <div class="dashboard-hero-meta">
+                                <div class="dashboard-hero-date">${todayDateStr}</div>
+                                <button class="${updateState.active ? 'dashboard-refresh-link is-update-pending' : 'dashboard-refresh-link'}" onclick="window.app_checkForSystemUpdate()" title="${updateState.active ? 'Update available. Click to refresh into the new version.' : 'Check for System Update'}">
+                                    ${updateState.active ? 'System update available' : 'Check for System Update'}
+                                </button>
+                            </div>
                             <div class="dashboard-hero-brand" aria-hidden="true">
                                 <img src="crwi-logo.png" alt="CRWI logo" class="dashboard-hero-brand-logo">
                             </div>
@@ -2272,7 +2461,7 @@ export async function renderDashboard() {
                                 <button class="${btnClass} dashboard-checkin-btn" id="attendance-btn" ${isReadOnlyView ? 'disabled' : ''} title="${isReadOnlyView ? 'View only' : ''}">${btnText} <i class="fa-solid fa-fingerprint"></i></button>
                                 ${pauseBtnHtml}
                             </div>
-                            <div class="location-text dashboard-checkin-location" id="location-text"><i class="fa-solid fa-location-dot"></i><span>${isCheckedIn && displayUser.currentLocation ? `Lat: ${Number(displayUser.currentLocation.lat).toFixed(4)}, Lng: ${Number(displayUser.currentLocation.lng).toFixed(4)}` : 'Waiting for location...'}</span></div>
+                            <div class="location-text dashboard-checkin-location" id="location-text" ${isCheckedIn && displayUser.currentLocation ? `data-lat="${displayUser.currentLocation.lat}" data-lng="${displayUser.currentLocation.lng}"` : ''}><i class="fa-solid fa-location-dot"></i><span>${isCheckedIn && displayUser.currentLocation ? `Lat: ${Number(displayUser.currentLocation.lat).toFixed(4)}, Lng: ${Number(displayUser.currentLocation.lng).toFixed(4)}` : 'Waiting for location...'}</span></div>
                         </div>
                         <div class="dashboard-primary-col">${renderYearlyPlanHTML}</div>
                         <div class="dashboard-primary-col ${!isViewingSelf ? 'dashboard-primary-col-highlight' : ''}">${renderWorkLog(currentWeekWorkPlans, collaborations, targetStaff, minutesData, {
@@ -2318,14 +2507,9 @@ function buildStaffActivityMonthOptions(count = 8) {
     return opts;
 }
 
+const STATUS_RANK = { completed: 0, 'in-process': 1, overdue: 2, 'not-completed': 3, 'to-be-started': 4 };
+
 function normalizeStaffActivityLogs(allLogs) {
-    const statusRank = {
-        completed: 0,
-        'in-process': 1,
-        'to-be-started': 2,
-        overdue: 3,
-        'not-completed': 4
-    };
     const normalizeStatus = (log) => (
         window.AppCalendar
             ? window.AppCalendar.getSmartTaskStatus(log.date, log.status || '')
@@ -2344,8 +2528,8 @@ function normalizeStaffActivityLogs(allLogs) {
             return;
         }
 
-        const existingRank = statusRank[existing._taskStatus] ?? 99;
-        const candidateRank = statusRank[candidate._taskStatus] ?? 99;
+        const existingRank = STATUS_RANK[existing._taskStatus] ?? 99;
+        const candidateRank = STATUS_RANK[candidate._taskStatus] ?? 99;
         if (candidateRank < existingRank) {
             seen.set(key, candidate);
         }
@@ -2356,7 +2540,6 @@ function normalizeStaffActivityLogs(allLogs) {
 
 function sortStaffActivityLogs(logs, sortKey) {
     const copy = [...logs];
-    const statusRank = { completed: 0, 'in-process': 1, overdue: 2, 'not-completed': 3, 'to-be-started': 4 };
     copy.sort((a, b) => {
         const dateDiffDesc = new Date(b.date) - new Date(a.date);
         const nameCmp = String(a.staffName || '').toLowerCase().localeCompare(String(b.staffName || '').toLowerCase());
@@ -2365,7 +2548,7 @@ function sortStaffActivityLogs(logs, sortKey) {
         if (sortKey === 'staff-desc') return (-nameCmp) || dateDiffDesc;
         if (sortKey === 'completed-first') return a._taskGroup.localeCompare(b._taskGroup) || dateDiffDesc;
         if (sortKey === 'incomplete-first') return b._taskGroup.localeCompare(a._taskGroup) || dateDiffDesc;
-        if (sortKey === 'status-priority') return (statusRank[a._taskStatus] ?? 99) - (statusRank[b._taskStatus] ?? 99) || dateDiffDesc || nameCmp;
+        if (sortKey === 'status-priority') return (STATUS_RANK[a._taskStatus] ?? 99) - (STATUS_RANK[b._taskStatus] ?? 99) || dateDiffDesc || nameCmp;
         return dateDiffDesc || nameCmp;
     });
     return copy;
@@ -2391,88 +2574,78 @@ function disposeTeamActivityAutoScroll() {
     Array.from(teamActivityAutoScroll.elements).forEach(el => clearTeamActivityController(el));
 }
 
-function initTeamActivityAutoScroll(container) {
-    if (!container) return;
-    disposeTeamActivityAutoScroll();
-    const SCROLL_STEP_PX = 1.2;
-    const TICK_MS = 35;
-    const BOTTOM_PAUSE_MS = 1400;
-    const TOP_PAUSE_MS = 900;
-    const EDGE_THRESHOLD_PX = 2;
-    const STALL_TICKS_BEFORE_FLIP = 20;
-    const columns = container.querySelectorAll('.dashboard-team-activity-col-list');
-    columns.forEach((el) => {
-        const state = {
-            intervalId: null,
-            pauseTimeoutId: null,
-            resumeTimeoutId: null,
-            direction: 1,
-            isPausedByUser: false,
-            isWaitingAtEdge: false,
-            lastScrollTop: 0,
-            stallTicks: 0
-        };
-        const waitAtEdge = (nextDirection, waitMs) => {
-            state.isWaitingAtEdge = true;
-            if (state.pauseTimeoutId) clearTimeout(state.pauseTimeoutId);
-            state.pauseTimeoutId = setTimeout(() => {
-                state.direction = nextDirection;
-                state.isWaitingAtEdge = false;
-                state.stallTicks = 0;
-            }, waitMs);
-        };
-        const tick = () => {
-            if (state.isPausedByUser || state.isWaitingAtEdge || !el.isConnected) return;
-            const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
-            if (maxScroll <= 0) {
-                state.stallTicks = 0;
-                state.lastScrollTop = 0;
-                return;
-            }
-            el.scrollTop += (SCROLL_STEP_PX * state.direction);
-            const nearBottom = el.scrollTop >= (maxScroll - EDGE_THRESHOLD_PX);
-            const nearTop = el.scrollTop <= EDGE_THRESHOLD_PX;
-            if (state.direction === 1 && nearBottom) {
-                el.scrollTop = maxScroll;
-                waitAtEdge(-1, BOTTOM_PAUSE_MS);
-                return;
-            }
-            if (state.direction === -1 && nearTop) {
-                el.scrollTop = 0;
-                waitAtEdge(1, TOP_PAUSE_MS);
-                return;
-            }
-
-            if (Math.abs(el.scrollTop - state.lastScrollTop) < 0.2) {
-                state.stallTicks += 1;
-                if (state.stallTicks >= STALL_TICKS_BEFORE_FLIP) {
-                    state.direction *= -1;
-                    state.stallTicks = 0;
-                }
-            } else {
+// Shared auto-scroll implementation (TASK-016)
+function createAutoScrollController(el, config, registry) {
+    const { SCROLL_STEP_PX, TICK_MS, BOTTOM_PAUSE_MS, TOP_PAUSE_MS, EDGE_THRESHOLD_PX, STALL_TICKS_BEFORE_FLIP, TOUCH_RESUME_MS } = config;
+    const state = {
+        intervalId: null,
+        pauseTimeoutId: null,
+        resumeTimeoutId: null,
+        direction: 1,
+        isPausedByUser: false,
+        isWaitingAtEdge: false,
+        lastScrollTop: 0,
+        stallTicks: 0
+    };
+    const waitAtEdge = (nextDirection, waitMs) => {
+        state.isWaitingAtEdge = true;
+        if (state.pauseTimeoutId) clearTimeout(state.pauseTimeoutId);
+        state.pauseTimeoutId = setTimeout(() => {
+            state.direction = nextDirection;
+            state.isWaitingAtEdge = false;
+            state.stallTicks = 0;
+        }, waitMs);
+    };
+    const tick = () => {
+        if (state.isPausedByUser || state.isWaitingAtEdge || !el.isConnected) return;
+        const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
+        if (maxScroll <= 0) {
+            state.stallTicks = 0;
+            state.lastScrollTop = 0;
+            return;
+        }
+        el.scrollTop += (SCROLL_STEP_PX * state.direction);
+        const nearBottom = el.scrollTop >= (maxScroll - EDGE_THRESHOLD_PX);
+        const nearTop = el.scrollTop <= EDGE_THRESHOLD_PX;
+        if (state.direction === 1 && nearBottom) {
+            el.scrollTop = maxScroll;
+            waitAtEdge(-1, BOTTOM_PAUSE_MS);
+            return;
+        }
+        if (state.direction === -1 && nearTop) {
+            el.scrollTop = 0;
+            waitAtEdge(1, TOP_PAUSE_MS);
+            return;
+        }
+        if (Math.abs(el.scrollTop - state.lastScrollTop) < 0.2) {
+            state.stallTicks += 1;
+            if (state.stallTicks >= STALL_TICKS_BEFORE_FLIP) {
+                state.direction *= -1;
                 state.stallTicks = 0;
             }
-            state.lastScrollTop = el.scrollTop;
-        };
-        state.onMouseEnter = () => { state.isPausedByUser = true; };
-        state.onMouseLeave = () => { state.isPausedByUser = false; };
-        state.onTouchStart = () => { state.isPausedByUser = true; if (state.resumeTimeoutId) clearTimeout(state.resumeTimeoutId); };
-        state.onTouchEnd = () => { if (state.resumeTimeoutId) clearTimeout(state.resumeTimeoutId); state.resumeTimeoutId = setTimeout(() => { state.isPausedByUser = false; }, 400); };
-        state.onTouchCancel = () => { state.isPausedByUser = false; };
-        el.addEventListener('mouseenter', state.onMouseEnter);
-        el.addEventListener('mouseleave', state.onMouseLeave);
-        el.addEventListener('touchstart', state.onTouchStart, { passive: true });
-        el.addEventListener('touchend', state.onTouchEnd, { passive: true });
-        el.addEventListener('touchcancel', state.onTouchCancel, { passive: true });
-        state.intervalId = setInterval(tick, TICK_MS);
-        teamActivityAutoScroll.controllers.set(el, state);
-        teamActivityAutoScroll.elements.add(el);
-    });
+        } else {
+            state.stallTicks = 0;
+        }
+        state.lastScrollTop = el.scrollTop;
+    };
+    state.onMouseEnter = () => { state.isPausedByUser = true; };
+    state.onMouseLeave = () => { state.isPausedByUser = false; };
+    state.onTouchStart = () => { state.isPausedByUser = true; if (state.resumeTimeoutId) clearTimeout(state.resumeTimeoutId); };
+    state.onTouchEnd = () => { if (state.resumeTimeoutId) clearTimeout(state.resumeTimeoutId); state.resumeTimeoutId = setTimeout(() => { state.isPausedByUser = false; }, TOUCH_RESUME_MS); };
+    state.onTouchCancel = () => { state.isPausedByUser = false; };
+    el.addEventListener('mouseenter', state.onMouseEnter);
+    el.addEventListener('mouseleave', state.onMouseLeave);
+    el.addEventListener('touchstart', state.onTouchStart, { passive: true });
+    el.addEventListener('touchend', state.onTouchEnd, { passive: true });
+    el.addEventListener('touchcancel', state.onTouchCancel, { passive: true });
+    state.intervalId = setInterval(tick, TICK_MS);
+    registry.controllers.set(el, state);
+    registry.elements.add(el);
 }
 
-function clearWorklogController(el) {
+function clearAutoScrollController(el, registry) {
     if (!el) return;
-    const state = worklogAutoScroll.controllers.get(el);
+    const state = registry.controllers.get(el);
     if (!state) return;
     if (state.intervalId) clearInterval(state.intervalId);
     if (state.pauseTimeoutId) clearTimeout(state.pauseTimeoutId);
@@ -2482,91 +2655,32 @@ function clearWorklogController(el) {
     el.removeEventListener('touchstart', state.onTouchStart);
     el.removeEventListener('touchend', state.onTouchEnd);
     el.removeEventListener('touchcancel', state.onTouchCancel);
-    worklogAutoScroll.controllers.delete(el);
-    worklogAutoScroll.elements.delete(el);
+    registry.controllers.delete(el);
+    registry.elements.delete(el);
 }
 
-function disposeWorklogAutoScroll() {
-    Array.from(worklogAutoScroll.elements).forEach(el => clearWorklogController(el));
+function disposeAutoScrollRegistry(registry) {
+    Array.from(registry.elements).forEach(el => clearAutoScrollController(el, registry));
+}
+
+const AUTO_SCROLL_CONFIG_TEAM = { SCROLL_STEP_PX: 1.2, TICK_MS: 35, BOTTOM_PAUSE_MS: 1400, TOP_PAUSE_MS: 900, EDGE_THRESHOLD_PX: 2, STALL_TICKS_BEFORE_FLIP: 20, TOUCH_RESUME_MS: 400 };
+const AUTO_SCROLL_CONFIG_WORKLOG = { SCROLL_STEP_PX: 1, TICK_MS: 38, BOTTOM_PAUSE_MS: 1200, TOP_PAUSE_MS: 900, EDGE_THRESHOLD_PX: 2, STALL_TICKS_BEFORE_FLIP: 20, TOUCH_RESUME_MS: 350 };
+
+function initAutoScroll(container, selector, config, registry) {
+    if (!container) return;
+    disposeAutoScrollRegistry(registry);
+    // Respect prefers-reduced-motion
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const elements = container.querySelectorAll(selector);
+    elements.forEach(el => createAutoScrollController(el, config, registry));
+}
+
+function initTeamActivityAutoScroll(container) {
+    initAutoScroll(container, '.dashboard-team-activity-col-list', AUTO_SCROLL_CONFIG_TEAM, teamActivityAutoScroll);
 }
 
 function initWorklogAutoScroll(container = document) {
-    if (!container) return;
-    disposeWorklogAutoScroll();
-    const SCROLL_STEP_PX = 1;
-    const TICK_MS = 38;
-    const BOTTOM_PAUSE_MS = 1200;
-    const TOP_PAUSE_MS = 900;
-    const EDGE_THRESHOLD_PX = 2;
-    const STALL_TICKS_BEFORE_FLIP = 20;
-    const lists = container.querySelectorAll('.dashboard-worklog-list');
-
-    lists.forEach((el) => {
-        const state = {
-            intervalId: null,
-            pauseTimeoutId: null,
-            resumeTimeoutId: null,
-            direction: 1,
-            isPausedByUser: false,
-            isWaitingAtEdge: false,
-            lastScrollTop: 0,
-            stallTicks: 0
-        };
-        const waitAtEdge = (nextDirection, waitMs) => {
-            state.isWaitingAtEdge = true;
-            if (state.pauseTimeoutId) clearTimeout(state.pauseTimeoutId);
-            state.pauseTimeoutId = setTimeout(() => {
-                state.direction = nextDirection;
-                state.isWaitingAtEdge = false;
-                state.stallTicks = 0;
-            }, waitMs);
-        };
-        const tick = () => {
-            if (state.isPausedByUser || state.isWaitingAtEdge || !el.isConnected) return;
-            const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
-            if (maxScroll <= 0) {
-                state.stallTicks = 0;
-                state.lastScrollTop = 0;
-                return;
-            }
-            el.scrollTop += (SCROLL_STEP_PX * state.direction);
-            const nearBottom = el.scrollTop >= (maxScroll - EDGE_THRESHOLD_PX);
-            const nearTop = el.scrollTop <= EDGE_THRESHOLD_PX;
-            if (state.direction === 1 && nearBottom) {
-                el.scrollTop = maxScroll;
-                waitAtEdge(-1, BOTTOM_PAUSE_MS);
-                return;
-            }
-            if (state.direction === -1 && nearTop) {
-                el.scrollTop = 0;
-                waitAtEdge(1, TOP_PAUSE_MS);
-                return;
-            }
-            if (Math.abs(el.scrollTop - state.lastScrollTop) < 0.2) {
-                state.stallTicks += 1;
-                if (state.stallTicks >= STALL_TICKS_BEFORE_FLIP) {
-                    state.direction *= -1;
-                    state.stallTicks = 0;
-                }
-            } else {
-                state.stallTicks = 0;
-            }
-            state.lastScrollTop = el.scrollTop;
-        };
-        state.onMouseEnter = () => { state.isPausedByUser = true; };
-        state.onMouseLeave = () => { state.isPausedByUser = false; };
-        state.onTouchStart = () => { state.isPausedByUser = true; if (state.resumeTimeoutId) clearTimeout(state.resumeTimeoutId); };
-        state.onTouchEnd = () => { if (state.resumeTimeoutId) clearTimeout(state.resumeTimeoutId); state.resumeTimeoutId = setTimeout(() => { state.isPausedByUser = false; }, 350); };
-        state.onTouchCancel = () => { state.isPausedByUser = false; };
-        el.addEventListener('mouseenter', state.onMouseEnter);
-        el.addEventListener('mouseleave', state.onMouseLeave);
-        el.addEventListener('touchstart', state.onTouchStart, { passive: true });
-        el.addEventListener('touchend', state.onTouchEnd, { passive: true });
-        el.addEventListener('touchcancel', state.onTouchCancel, { passive: true });
-        state.intervalId = setInterval(tick, TICK_MS);
-        worklogAutoScroll.controllers.set(el, state);
-        worklogAutoScroll.elements.add(el);
-    });
+    initAutoScroll(container, '.dashboard-worklog-list', AUTO_SCROLL_CONFIG_WORKLOG, worklogAutoScroll);
 }
 
 const refreshStaffActivityWidget = async (fetchLogs = true, options = {}) => {
@@ -2725,6 +2839,31 @@ if (typeof window !== 'undefined') {
         const nextSort = String(value || '').trim() || 'date-newest';
         state.sortKey = nextSort;
         await refreshStaffActivityWidget(false, { listId, labelId });
+    };
+
+    window.app_setStaffActivityView = async function (mode) {
+        const state = getStaffActivityState();
+        state.activityViewMode = mode === 'my' ? 'my' : 'team';
+        await refreshStaffActivityWidget(false);
+    };
+
+    window.app_saveDashboardCustomization = async function () {
+        const widget = document.querySelector('.dashboard-customization-widget');
+        if (!widget) return;
+        const settings = window.app_dashboardCustomization?.getDefaults() || {};
+        const checks = widget.querySelectorAll('input[data-customize-key]');
+        checks.forEach(cb => {
+            const key = cb.getAttribute('data-customize-key');
+            if (key.startsWith('widgetVisibility.')) {
+                const widgetKey = key.replace('widgetVisibility.', '');
+                settings.widgetVisibility[widgetKey] = cb.checked;
+            } else if (key === 'globalAdminMirror') {
+                settings.globalAdminMirror = cb.checked;
+            }
+        });
+        const density = widget.querySelector('input[name="customize-density"]:checked');
+        if (density) settings.layoutDensity = density.value;
+        await window.app_dashboardCustomization?.saveSettings(settings);
     };
 
     window.app_setDashboardLeaveHistoryDate = async function (value) {
@@ -3001,9 +3140,9 @@ if (typeof window !== 'undefined') {
             // Fetch latest daily summary directly from Firestore to check if already refreshed
             const ds = await window.AppDB.get('daily_summaries', todayStr, { source: 'server' });
             const refreshCount = Number(ds?.heroRefreshCount || 0);
-            const MAX_REFRESHES = 3;
-            if (refreshCount >= MAX_REFRESHES) {
-                alert(`The Hero of the Week has already been refreshed ${MAX_REFRESHES} times today.`);
+            const maxRefreshes = AppConfig?.DASHBOARD?.MAX_REFRESHES || 3;
+            if (refreshCount >= maxRefreshes) {
+                alert(`The Hero of the Week has already been refreshed ${maxRefreshes} times today.`);
                 // Reload dashboard to update UI
                 const html = await renderDashboard();
                 const content = document.getElementById('page-content');
@@ -3060,6 +3199,7 @@ if (typeof window !== 'undefined') {
             }
         }
     };
+    window.app_renderCustomizationWidget = renderCustomizationWidget;
 }
 
 

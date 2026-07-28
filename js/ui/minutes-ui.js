@@ -33,7 +33,79 @@ const _state = {
     stylesInjected: false,
     selectedAttendeeIds: new Set(),
     allUsers: [],          // cached after first load
+    isDirty: false,        // true when user is in form/edit mode
+    formSnapshot: null,    // captured form state for restore after re-render
 };
+
+// ---------------------------------------------------------------------------
+// Form state capture / restore
+// ---------------------------------------------------------------------------
+
+function captureNewMinuteFormState() {
+    const form = document.getElementById('new-minute-form');
+    if (!form || form.style.display === 'none') return null;
+
+    const title = document.getElementById('new-minute-title')?.value || '';
+    const date = document.getElementById('new-minute-date')?.value || '';
+    const editor = document.getElementById('new-minute-content-editor');
+    const contentHtml = editor ? editor.innerHTML : '';
+    const actionItems = Array.from(document.querySelectorAll('.action-item-row-card')).map((row) => ({
+        task: row.querySelector('.action-task')?.value || '',
+        assignee: row.querySelector('.action-assignee')?.value || '',
+        due: row.querySelector('.action-due')?.value || '',
+    }));
+
+    return {
+        title,
+        date,
+        contentHtml,
+        attendeeIds: new Set(_state.selectedAttendeeIds),
+        actionItems,
+    };
+}
+
+function restoreNewMinuteFormState(snapshot) {
+    if (!snapshot) return;
+
+    const form = document.getElementById('new-minute-form');
+    if (!form) return;
+
+    form.style.display = 'block';
+
+    const titleEl = document.getElementById('new-minute-title');
+    if (titleEl) titleEl.value = snapshot.title;
+
+    const dateEl = document.getElementById('new-minute-date');
+    if (dateEl) dateEl.value = snapshot.date;
+
+    const editor = document.getElementById('new-minute-content-editor');
+    if (editor) editor.innerHTML = snapshot.contentHtml;
+
+    _state.selectedAttendeeIds = snapshot.attendeeIds;
+    window.app_refreshAttendeeChips?.();
+
+    document.querySelectorAll('.attendee-item-modern input[type="checkbox"]').forEach((cb) => {
+        cb.checked = _state.selectedAttendeeIds.has(cb.value);
+    });
+
+    const container = document.getElementById('action-items-container');
+    if (container && snapshot.actionItems.length) {
+        container.innerHTML = '';
+        snapshot.actionItems.forEach((item) => {
+            window.app_addActionItemRow?.();
+            const rows = document.querySelectorAll('.action-item-row-card');
+            const lastRow = rows[rows.length - 1];
+            if (lastRow) {
+                const taskInput = lastRow.querySelector('.action-task');
+                if (taskInput) taskInput.value = item.task;
+                const assigneeSelect = lastRow.querySelector('.action-assignee');
+                if (assigneeSelect) assigneeSelect.value = item.assignee;
+                const dueInput = lastRow.querySelector('.action-due');
+                if (dueInput) dueInput.value = item.due;
+            }
+        });
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Date helpers
@@ -963,8 +1035,8 @@ function injectMinutesStyles() {
             display: none;
         }
 
-        /* ── Detail modal ───────────────────────────────────────────────── */
-        .modal-overlay {
+        /* ── Detail modal (scoped to avoid overriding global .modal-overlay / .modal-content) ── */
+        .minutes-overlay {
             position: fixed; inset: 0;
             background: rgba(15,23,42,0.55);
             backdrop-filter: blur(6px);
@@ -975,7 +1047,7 @@ function injectMinutesStyles() {
             padding: 1.5rem;
         }
 
-        .modal-content {
+        .minutes-modal-content {
             background: white;
             border-radius: 24px;
             width: 100%;
@@ -987,7 +1059,7 @@ function injectMinutesStyles() {
         }
         .minutes-detail-wide { max-width: 1000px; }
 
-        .modal-header {
+        .minutes-modal-header {
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
@@ -995,8 +1067,8 @@ function injectMinutesStyles() {
             border-bottom: 1px solid var(--minutes-border);
             flex-shrink: 0;
         }
-        .modal-body   { flex: 1; overflow-y: auto; padding: 2rem; }
-        .modal-footer {
+        .minutes-modal-body   { flex: 1; overflow-y: auto; padding: 2rem; }
+        .minutes-modal-footer {
             display: flex;
             align-items: center;
             gap: 1rem;
@@ -1217,9 +1289,9 @@ function injectMinutesStyles() {
             .minutes-calendar-grid     { gap: 0.5rem; }
             .minutes-calendar-day      { min-height: 130px; padding: 0.7rem; }
             .detail-grid               { grid-template-columns: 1fr; }
-            .modal-body                { padding: 1rem; }
-            .modal-header              { padding: 1.25rem 1rem 1rem; }
-            .modal-footer              { padding: 1rem; flex-wrap: wrap; }
+            .minutes-modal-body        { padding: 1rem; }
+            .minutes-modal-header      { padding: 1.25rem 1rem 1rem; }
+            .minutes-modal-footer      { padding: 1rem; flex-wrap: wrap; }
         }
     `;
     document.head.appendChild(style);
@@ -1592,9 +1664,9 @@ function buildDetailModalHtml(m, allUsers, currentUser) {
     const displayDate = formatMinuteDate(m.date);
 
     return `
-        <div class="modal-overlay" id="minute-detail-modal" style="display:flex;">
-            <div class="modal-content minutes-detail-wide">
-                <div class="modal-header">
+        <div class="minutes-overlay" id="minute-detail-modal" style="display:flex;">
+            <div class="minutes-modal-content minutes-detail-wide">
+                <div class="minutes-modal-header">
                     <div>
                         <span class="detail-date">${displayDate}</span>
                         <h2 style="margin:0; color:#1e1b4b;">${safeHtml(m.title)}</h2>
@@ -1611,7 +1683,7 @@ function buildDetailModalHtml(m, allUsers, currentUser) {
                             class="close-modal-btn" aria-label="Close">&times;</button>
                 </div>
 
-                <div class="modal-body">
+                <div class="minutes-modal-body">
                     <div class="detail-grid">
                         <div class="main-column">
                             <section>
@@ -1657,7 +1729,7 @@ function buildDetailModalHtml(m, allUsers, currentUser) {
                     </div>
                 </div>
 
-                <div class="modal-footer">
+                <div class="minutes-modal-footer">
                     ${m.locked ? '<span class="status-locked-msg"><i class="fa-solid fa-lock"></i> Record Locked (All approved)</span>' : ''}
                     <div style="flex:1"></div>
                     <button class="action-btn secondary"
@@ -1694,6 +1766,9 @@ function initMinutesHandlers() {
             if (container) { container.innerHTML = ''; window.app_addActionItemRow(); }
             const editor = document.getElementById('new-minute-content-editor');
             if (editor) editor.innerHTML = '';
+            if (window.AppMinutes?.setMinutesDirtyState) window.AppMinutes.setMinutesDirtyState(true);
+        } else {
+            if (window.AppMinutes?.setMinutesDirtyState) window.AppMinutes.setMinutesDirtyState(false);
         }
     };
 
@@ -1985,13 +2060,32 @@ function initMinutesHandlers() {
             return;
         }
 
+        const freshUsers = window.AppDB?.getAll ? await window.AppDB.getAll('users') : _state.allUsers;
+        _state.allUsers = freshUsers;
+
         let container = document.getElementById('modal-container');
         if (!container) {
             container = document.createElement('div');
             container.id = 'modal-container';
             document.body.appendChild(container);
         }
-        container.innerHTML = buildDetailModalHtml(m, _state.allUsers, currentUser);
+        container.innerHTML = buildDetailModalHtml(m, freshUsers, currentUser);
+
+        const isOwner = m.createdBy === currentUser.id;
+        const isAdmin = window.app_hasPerm('minutes', 'admin', currentUser);
+        const canEdit = (isOwner || isAdmin) && !m.locked;
+        if (canEdit && window.AppMinutes?.setMinutesDirtyState) {
+            window.AppMinutes.setMinutesDirtyState(true);
+        }
+
+        const modal = document.getElementById('minute-detail-modal');
+        if (modal) {
+            const originalRemove = modal.remove.bind(modal);
+            modal.remove = () => {
+                if (window.AppMinutes?.setMinutesDirtyState) window.AppMinutes.setMinutesDirtyState(false);
+                originalRemove();
+            };
+        }
     };
 
     // ── Delete minute ────────────────────────────────────────────────────────
@@ -2019,10 +2113,10 @@ function initMinutesHandlers() {
 // ---------------------------------------------------------------------------
 
 export async function renderMinutes() {
-    // Inject styles exactly once
+    const formSnapshot = captureNewMinuteFormState();
+
     injectMinutesStyles();
 
-    // Load data
     const minutes    = await window.AppMinutes.getMinutes();
     const allUsers   = window.AppDB?.getAll ? await window.AppDB.getAll('users') : [];
     const currentUser = window.AppAuth.getUser();
@@ -2030,24 +2124,22 @@ export async function renderMinutes() {
         ? await window.AppCalendar.getPlans()
         : { leaves: [], events: [], work: [] };
 
-    // Persist users in module state so handlers can access them without re-fetching
     _state.allUsers = allUsers;
 
-    // Initialise state defaults on first call
     if (!_state.monthKey) _state.monthKey = currentMonthKey();
 
-    // Register all window handlers once
     initMinutesHandlers();
 
-    // Sort minutes newest-first
     const sortedMinutes = [...minutes].sort((a, b) => {
         const aTime = parseMinuteDate(a.date)?.getTime() || 0;
         const bTime = parseMinuteDate(b.date)?.getTime() || 0;
         return bTime - aTime;
     });
 
-    // Apply any existing search filter after the next paint
-    window.setTimeout(() => window.app_filterMinutes(_state.searchQuery || ''), 0);
+    window.setTimeout(() => {
+        window.app_filterMinutes(_state.searchQuery || '');
+        if (formSnapshot) restoreNewMinuteFormState(formSnapshot);
+    }, 0);
 
     const isCalendar = _state.viewMode === 'calendar';
 

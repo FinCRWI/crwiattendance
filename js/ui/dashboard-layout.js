@@ -6,13 +6,13 @@
  */
 
 const STORE = 'dashboard_widget_layout_';
-const LAYOUT_VER = 3;
+const LAYOUT_VER = 4;
 const R_MIN = 80;
 const R_MAX = 800;
 
 const ZONE_MAP = {
-  primaryRow: ['checkin', 'worklog', 'team-activity'],
-  detailSection: ['journey-reflection', 'team-schedule', 'hero-week', 'leave-requests', 'leave-history', 'missed-checkout'],
+  primaryRow: ['checkin', 'worklog', 'team-schedule'],
+  detailSection: ['journey-reflection', 'team-activity', 'hero-week', 'leave-requests', 'leave-history', 'missed-checkout'],
   statsRow: ['stats-monthly', 'stats-yearly']
 };
 
@@ -186,7 +186,7 @@ function load(uid) {
     const raw = localStorage.getItem(STORE + uid);
     if (!raw) return null;
     const p = JSON.parse(raw);
-    if (p && p._ver >= 1) {
+    if (p && p._ver >= LAYOUT_VER) {
       const { _ver, _h, _s, ...z } = p;
       z._s = _s || _h || {};
       return z;
@@ -274,6 +274,7 @@ function flatten() {
 // ─── Edit toggle button ───────────────────────────────────────
 
 function injectBtn(uid) {
+  if (!window.app_canCustomizeDashboard?.()) return;
   const old = document.getElementById('dashboard-layout-toggle');
   if (old) old.remove();
   const h = qs('.dashboard-hero-card');

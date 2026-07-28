@@ -231,6 +231,10 @@ export function renderModals() {
                             <input type="checkbox" class="perm-check gm-center" data-module="letterPad" data-level="view" id="edit-perm-letterPad-view">
                             <input type="checkbox" class="perm-check gm-center" data-module="letterPad" data-level="admin" id="edit-perm-letterPad-admin">
 
+                            <div class="gm-text">Dashboard Customization</div>
+                            <input type="checkbox" class="perm-check gm-center" data-module="customize" data-level="view" id="edit-perm-customize-view">
+                            <input type="checkbox" class="perm-check gm-center" data-module="customize" data-level="admin" id="edit-perm-customize-admin">
+
                             <div style="font-size: 0.82rem; color: #1e293b; display: flex; align-items: center; gap: 0.4rem;">
                                 AI Memory Sheet
                                 <label style="display: flex; align-items: center; gap: 0.3rem; font-weight: 400; font-size: 0.75rem; color: #475569; cursor: pointer;">
@@ -416,6 +420,11 @@ export function renderModals() {
                             <div class="gm-label">Birthday Calendar</div>
                             <input type="checkbox" class="perm-check" data-module="birthday" data-level="view" id="add-perm-birthday-view">
                             <input type="checkbox" class="perm-check" data-module="birthday" data-level="admin" id="add-perm-birthday-admin">
+
+                            <!-- Dashboard Customization -->
+                            <div class="gm-label">Dashboard Customization</div>
+                            <input type="checkbox" class="perm-check" data-module="customize" data-level="view" id="add-perm-customize-view">
+                            <input type="checkbox" class="perm-check" data-module="customize" data-level="admin" id="add-perm-customize-admin">
 
                         </div>
                     </div>
