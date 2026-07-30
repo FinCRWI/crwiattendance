@@ -3,6 +3,8 @@
  * Reusable UI patterns across different pages.
  */
 
+import { normalizeTaskStatus } from '../utils/task-status.js';
+
 
 /**
  * Render star rating display (1-5 stars)
@@ -40,7 +42,7 @@ export function renderStarRating(rating, showNumber = true) {
  * @returns {string} - HTML for status badge
  */
 export function renderTaskStatusBadge(status, showIcon = true) {
-    const s = String(status || 'to-be-started').toLowerCase();
+    const s = normalizeTaskStatus({ status }, '', null);
     let label = 'To Be Started';
     let icon = 'fa-circle-dot';
     let className = 'status-badge-to-be-started';
@@ -53,6 +55,10 @@ export function renderTaskStatusBadge(status, showIcon = true) {
         label = 'Completed';
         icon = 'fa-circle-check';
         className = 'status-badge-completed';
+    } else if (s === 'postponed') {
+        label = 'Postponed';
+        icon = 'fa-clock';
+        className = 'status-badge-postponed';
     } else if (s === 'overdue') {
         label = 'Overdue';
         icon = 'fa-circle-exclamation';
@@ -70,4 +76,3 @@ export function renderTaskStatusBadge(status, showIcon = true) {
         </div>
     `;
 }
-

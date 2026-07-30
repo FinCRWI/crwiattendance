@@ -5,6 +5,7 @@
 
 import { safeHtml, safeUrl, timeAgo } from './helpers.js';
 import { renderStarRating, renderTaskStatusBadge } from './common.js';
+import { normalizeTaskStatus } from '../utils/task-status.js';
 import { renderYearlyPlan } from './team-schedule.js';
 import { renderJourneyReflectionCard } from './journey-reflection.js';
 import { AppConfig } from '../config.js';
@@ -99,10 +100,7 @@ const normalizeDashboardPlannedTaskRows = (workPlans, targetStaffId, fromIso = '
         const taskItems = Array.isArray(plan.plans) ? plan.plans : [];
         taskItems.forEach((task, taskIndex) => {
             if (!task || task.isRemoved === true) return;
-            const rawStatus = String(task.status || '').trim();
-            const status = window.AppCalendar
-                ? window.AppCalendar.getSmartTaskStatus(planDate, rawStatus)
-                : (rawStatus || 'to-be-started');
+            const status = normalizeTaskStatus(task, planDate, window.AppCalendar?.getSmartTaskStatus);
             rows.push({
                 date: planDate,
                 userId: String(plan.userId || selectedStaffId || ''),
@@ -111,7 +109,7 @@ const normalizeDashboardPlannedTaskRows = (workPlans, targetStaffId, fromIso = '
                 taskIndex,
                 task: String(task.task || task.description || 'Planned task'),
                 status,
-                rawStatus,
+                rawStatus: String(task.status || '').trim(),
                 planScope: String(task.planScope || plan.planScope || 'personal'),
                 subPlans: Array.isArray(task.subPlans) ? task.subPlans : [],
                 completedDate: task.completedDate || '',
@@ -545,7 +543,7 @@ function getCurrentWeekOverdueWorkLogs(logs, targetStaffId, weekRange) {
                 if (!plan) return;
                 const dateKey = String(entry.date || '');
                 const rawStatus = String(plan.status || '').toLowerCase();
-                const smartStatus = window.AppCalendar ? window.AppCalendar.getSmartTaskStatus(dateKey, rawStatus) : rawStatus;
+                const smartStatus = normalizeTaskStatus(plan, dateKey, window.AppCalendar?.getSmartTaskStatus);
                 const isPastDue = dateKey && dateKey < todayKey;
                 const status = rawStatus === 'postponed'
                     ? 'postponed'
@@ -2524,17 +2522,11 @@ function buildStaffActivityMonthOptions(count = 8) {
 const STATUS_RANK = { completed: 0, 'in-process': 1, overdue: 2, 'not-completed': 3, 'to-be-started': 4 };
 
 function normalizeStaffActivityLogs(allLogs) {
-    const normalizeStatus = (log) => (
-        window.AppCalendar
-            ? window.AppCalendar.getSmartTaskStatus(log.date, log.status || '')
-            : (log.status || 'to-be-started')
-    );
-
     const seen = new Map();
     (allLogs || []).forEach((log) => {
         const desc = (log._displayDesc || '').trim();
         const key = `${log.staffName || ''}|${log.date || ''}|${desc}`;
-        const taskStatus = normalizeStatus(log);
+        const taskStatus = normalizeTaskStatus(log, log.date, window.AppCalendar?.getSmartTaskStatus);
         const candidate = { ...log, _taskStatus: taskStatus, _taskGroup: taskStatus === 'completed' ? 'completed' : 'incomplete' };
         const existing = seen.get(key);
         if (!existing) {
@@ -3215,6 +3207,5 @@ if (typeof window !== 'undefined') {
     };
     window.app_renderCustomizationWidget = renderCustomizationWidget;
 }
-
 
 

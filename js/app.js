@@ -10,6 +10,7 @@ import { escapeHtml as app_escapeHtml, escapeJsSingleQuote as app_escapeJsSingle
 import { getLocalISO } from './utils/date-helpers.js';
 import AppUI from './ui.js';
 import './modules/calendar.js';
+import { buildCheckoutTaskMutation } from './modules/checkout-task-updates.js';
 import './modules/activity.js';
 import './modules/tour.js';
 import './modules/analytics.js';
@@ -814,7 +815,7 @@ window.app_promptMissedCheckoutReason = (payload = {}) => {
                     </div>
                     <button type="button" onclick="this.closest('.modal-overlay').remove()" style="background:none; border:none; font-size:1.2rem; cursor:pointer;">&times;</button>
                 </div>
-                <form onsubmit="window.app_submitMissedCheckoutReason(event, '${String(logId)}')">
+                <form id="missed-checkout-reason-form">
                     <label style="display:block; font-size:0.85rem; margin-bottom:0.35rem;">Reason for not checking out</label>
                     <textarea name="reason" required placeholder="Share what happened..." style="width:100%; padding:0.75rem; border:1px solid #ddd; border-radius:8px; min-height:110px;"></textarea>
                     <div style="font-size:0.8rem; color:#92400e; margin-top:0.5rem;">
@@ -830,6 +831,11 @@ window.app_promptMissedCheckoutReason = (payload = {}) => {
     (document.body || document.getElementById('modal-container')).insertAdjacentHTML('beforeend', html);
 
     const modal = document.getElementById('missed-checkout-reason-modal');
+    const form = modal?.querySelector('#missed-checkout-reason-form');
+    form?.addEventListener('submit', (event) => {
+        event.preventDefault();
+        window.app_submitMissedCheckoutReason(event, String(logId));
+    });
     modal?.addEventListener('click', (ev) => {
         if (ev.target === modal) modal.remove();
     });
@@ -947,7 +953,7 @@ window.app_openMissedCheckoutTaskReconciliation = async ({ logId, date }) => {
                     : '';
                 const inferredAction = rememberedAction || (
                     (p.status === 'completed' || status === 'completed') ? 'complete' :
-                        (p.status === 'postponed' ? 'postpone' : '')
+                        (p.status === 'postponed' || p.status === 'not-completed') ? 'postpone' : ''
                 );
                 const detailState = window.app_initCheckoutTaskDetails(planIdForTask, taskIndexForTask, p);
                 const actionValue = detailState.action || inferredAction || '';
@@ -1018,7 +1024,7 @@ window.app_openMissedCheckoutTaskReconciliation = async ({ logId, date }) => {
 
 window.app_submitMissedCheckoutReason = async (event, logId) => {
     event.preventDefault();
-    const form = event.target;
+    const form = event.currentTarget || event.target;
     const reason = String(new FormData(form).get('reason') || '').trim();
     if (!reason) {
         alert('Please enter a reason.');
@@ -5217,64 +5223,6 @@ window.app_closeCheckoutActionModal = () => {
     document.getElementById('checkout-action-detail-modal')?.remove();
 };
 
-window.app_renderCheckoutActionPreview = () => {
-    const container = document.getElementById('checkout-action-preview');
-    const list = document.getElementById('checkout-action-preview-list');
-    if (!container || !list) return;
-    const detailsMap = window.app_checkoutTaskDetails || {};
-    const metaMap = window.app_checkoutTaskMeta || {};
-    const userMap = window.app_checkoutUserMap || {};
-    const items = Object.keys(detailsMap).map((key) => {
-        const detail = detailsMap[key];
-        if (!detail || !detail.action) return null;
-        const meta = metaMap[key] || {};
-        const title = meta.text || 'Task';
-        const actionLabel = detail.action === 'complete'
-            ? 'Complete'
-            : detail.action === 'postpone'
-                ? 'Postpone'
-                : detail.action === 'delegate'
-                    ? 'Delegate'
-                    : detail.action;
-        const statusLabel = app_checkoutStatusLabels[detail.progressStatus] || 'Waiting';
-        const progressNote = String(detail.progressNote || '').trim();
-        let extra = '';
-        if (detail.action === 'postpone') {
-            const date = app_normalizeIsoDate(detail.actionMeta?.postponeDate) || '—';
-            const reason = String(detail.actionMeta?.postponeReason || '').trim();
-            extra = `New date: ${app_escapeHtml(date)}${reason ? ` • Reason: ${app_escapeHtml(reason)}` : ''}`;
-        }
-        if (detail.action === 'delegate') {
-            const userId = String(detail.actionMeta?.delegateUserId || '');
-            const userName = userMap[userId] || '—';
-            const note = String(detail.actionMeta?.delegateNote || '').trim();
-            extra = `Assigned to: ${app_escapeHtml(userName)}${note ? ` • Note: ${app_escapeHtml(note)}` : ''}`;
-        }
-        if (detail.action === 'complete') {
-            const note = String(detail.actionMeta?.completionNote || '').trim();
-            extra = note ? `Completion note: ${app_escapeHtml(note)}` : '';
-        }
-        return `
-            <div class="checkout-action-preview-item">
-                <div class="checkout-action-preview-title">${app_escapeHtml(title)}</div>
-                <div class="checkout-action-preview-meta">
-                    <span class="checkout-action-preview-chip">${app_escapeHtml(actionLabel)}</span>
-                    <span>${detail.progressPercent}% • ${app_escapeHtml(statusLabel)}</span>
-                </div>
-                ${progressNote ? `<div class="checkout-action-preview-note">${app_escapeHtml(progressNote)}</div>` : ''}
-                ${extra ? `<div class="checkout-action-preview-extra">${extra}</div>` : ''}
-            </div>
-        `;
-    }).filter(Boolean);
-    if (items.length === 0) {
-        container.style.display = 'none';
-        list.innerHTML = '';
-        return;
-    }
-    container.style.display = 'block';
-    list.innerHTML = items.join('');
-};
-
 window.app_openCheckoutActionModal = (key) => {
     const details = window.app_checkoutTaskDetails?.[key];
     if (!details || !details.action) return;
@@ -5408,6 +5356,7 @@ window.app_applyCheckoutTaskUpdates = async (updates = [], options = {}) => {
     const updaterId = currentUser?.id || currentUser?.name || 'staff';
     const effectiveDate = String(options.effectiveDate || new Date().toISOString().split('T')[0]);
     const eventTimestamp = String(options.timestamp || new Date().toISOString());
+    const planSplices = {}; // { planId: [taskIndices] } — defer splices to avoid index corruption
     for (const update of updates) {
         const plan = await window.AppDB.get('work_plans', update.planId).catch(() => null);
         if (!plan || !Array.isArray(plan.plans)) {
@@ -5417,37 +5366,22 @@ window.app_applyCheckoutTaskUpdates = async (updates = [], options = {}) => {
         if (!task) {
             continue;
         }
-        task.progressPercent = update.progressPercent;
-        task.progressStatus = update.progressStatus;
-        task.progressNote = update.progressNote;
-        task.budgetHeadId = app_normalizeBudgetHeadId(update.budgetHeadId || task.budgetHeadId);
-        task.lastProgressUpdateAt = update.timestamp;
-        task.lastProgressUpdateBy = updaterId;
-        task.lastCheckoutAction = update.action;
-        if (update.action === 'complete') {
-            task.status = 'completed';
-            if (!task.completedDate) task.completedDate = effectiveDate;
-        }
-        if (update.action === 'postpone') {
-            task.status = 'postponed';
-        }
+        const mutation = buildCheckoutTaskMutation(task, update, {
+            effectiveDate,
+            planDate: plan.date || effectiveDate,
+            currentUserId: currentUser?.id || updaterId,
+            currentUserName: currentUser?.name || ''
+        });
+        Object.assign(task, mutation.nextTask, {
+            budgetHeadId: app_normalizeBudgetHeadId(mutation.nextTask.budgetHeadId)
+        });
         plan.updatedAt = new Date().toISOString();
         await window.AppDB.put('work_plans', plan);
-        if (update.action === 'postpone') {
-            const postponeDate = app_normalizeIsoDate(update.actionMeta?.postponeDate);
-            if (postponeDate) {
-                const detailSuffix = (task.subPlans && task.subPlans.length) ? ` - ${task.subPlans.join(', ')}` : '';
-                const baseText = `${task.task}${detailSuffix}`;
-                const fromDate = plan.date || effectiveDate;
-                const cleanedText = baseText.replace(/\s*\(Postponed from [^)]+\)\s*$/i, '');
-                const postponedText = `${cleanedText} (Postponed from ${fromDate})`;
-                await window.AppCalendar.addWorkPlanTask(postponeDate, currentUser.id, postponedText, [], {
-                    addedFrom: 'postponed',
-                    sourcePlanId: update.planId,
-                    sourceTaskIndex: update.taskIndex,
-                    postponedFromDate: fromDate
-                });
-            }
+        if (mutation.postponedTask) {
+            const postponedTask = mutation.postponedTask;
+            await window.AppCalendar.addWorkPlanTask(postponedTask.date, currentUser?.id || updaterId, postponedTask.taskDescription, postponedTask.subPlans || [], postponedTask.meta);
+            planSplices[update.planId] = planSplices[update.planId] || [];
+            planSplices[update.planId].push(update.taskIndex);
         }
         if (update.action === 'delegate') {
             const delegateUserId = String(update.actionMeta?.delegateUserId || '').trim();
@@ -5466,13 +5400,24 @@ window.app_applyCheckoutTaskUpdates = async (updates = [], options = {}) => {
             taskIndex: update.taskIndex,
             userId: currentUser?.id || '',
             actorId: updaterId,
-            budgetHeadId: app_normalizeBudgetHeadId(update.budgetHeadId || task.budgetHeadId),
+            budgetHeadId: app_normalizeBudgetHeadId(update.budgetHeadId || (task && task.budgetHeadId)),
             progressPercent: Number(update.progressPercent || 0),
             progressStatus: String(update.progressStatus || ''),
             note: String(update.progressNote || ''),
             timestamp: update.timestamp || eventTimestamp,
             effectiveDate
         }).catch(() => null);
+    }
+    // Apply deferred splices in descending order to prevent index corruption (Bug #1)
+    for (const [planId, indices] of Object.entries(planSplices)) {
+        indices.sort((a, b) => b - a);
+        const plan = await window.AppDB.get('work_plans', planId).catch(() => null);
+        if (!plan || !Array.isArray(plan.plans)) continue;
+        for (const idx of indices) {
+            plan.plans.splice(idx, 1);
+        }
+        plan.updatedAt = new Date().toISOString();
+        await window.AppDB.put('work_plans', plan);
     }
     if (window.AppStore && window.AppStore.invalidatePlans) {
         window.AppStore.invalidatePlans();
@@ -6026,7 +5971,10 @@ window.app_postponeTask = async (planId, taskIndex, targetDate) => {
             addedFrom: 'postponed',
             sourcePlanId: planId,
             sourceTaskIndex: taskIndex,
-            postponedFromDate: fromDate
+            postponedFromDate: fromDate,
+            status: 'postponed',
+            assignedTo: ownerUserId,
+            assignedToName: plan?.userName || ''
         });
         if (window.AppStore && window.AppStore.invalidatePlans) window.AppStore.invalidatePlans();
         alert(`Task postponed to ${targetDate}`);
@@ -7193,7 +7141,7 @@ async function handleAttendance() {
                                     : '';
                                 const inferredAction = rememberedAction || (
                                     (p.status === 'completed' || status === 'completed') ? 'complete' :
-                                        (p.status === 'postponed' ? 'postpone' : '')
+                                        (p.status === 'postponed' || p.status === 'not-completed') ? 'postpone' : ''
                                 );
                                 const detailState = window.app_initCheckoutTaskDetails(planIdForTask, taskIndexForTask, p);
                                 const actionValue = detailState.action || inferredAction || '';

@@ -334,7 +334,7 @@ const renderTeamActivitySection = async (from, to) => {
         startIso: from,
         endIso: to,
         scope: 'all',
-        sideEffects: false
+        sideEffects: true
     });
     const list = (rows || []).slice(0, 150).map((row) => `
         <tr>

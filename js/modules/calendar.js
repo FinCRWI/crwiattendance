@@ -47,6 +47,7 @@ export class Calendar {
     normalizeTaskStatus(status) {
         const key = String(status || '').trim().toLowerCase();
         if (key === 'in-progress') return 'in-process';
+        if (key === 'postponed' || key === 'postpone') return 'not-completed';
         return key;
     }
 
@@ -65,12 +66,12 @@ export class Calendar {
     isTaskClosed(task = {}, planDate = '') {
         if (!task || task.isRemoved === true) return true;
         const status = this.normalizeTaskStatus(task.status);
-        if (status === 'completed' || status === 'not-completed' || status === 'cancelled') return true;
+        if (status === 'completed' || status === 'not-completed' || status === 'cancelled' || status === 'postponed') return true;
         const smartStatus = this.getSmartTaskStatus(planDate || task.startDate || '', status || null);
         return smartStatus === 'completed' || smartStatus === 'not-completed';
     }
 
-    cloneTaskForDate(task = {}, targetDate, rootId, sourcePlan = {}) {
+    cloneTaskForDate(task = {}, targetDate, rootId, sourcePlan = {}, targetUserId = null, targetUserName = '') {
         const cloned = {
             ...task,
             startDate: targetDate,
@@ -81,7 +82,9 @@ export class Calendar {
             autoForwardedAt: new Date().toISOString(),
             isAutoForwarded: true,
             carryForwardPolicy: 'next_day_only',
-            carryForwardReason: sourcePlan.carryForwardReason || task.carryForwardReason || ''
+            carryForwardReason: sourcePlan.carryForwardReason || task.carryForwardReason || '',
+            assignedTo: targetUserId || sourcePlan.targetUserId || task.assignedTo || null,
+            assignedToName: targetUserName || sourcePlan.targetUserName || task.assignedToName || ''
         };
         if (this.normalizeTaskStatus(cloned.status) !== 'in-process') {
             cloned.status = '';
@@ -274,8 +277,10 @@ export class Calendar {
                             id: previousPlan.id,
                             date: previousPlan.date,
                             sourceTaskIndex: idx,
-                            carryForwardReason: carryReason
-                        }));
+                            carryForwardReason: carryReason,
+                            targetUserId: ownerKey,
+                            targetUserName: dayPlan?.userName || previousPlan?.userName || ''
+                        }, ownerKey, dayPlan?.userName || previousPlan?.userName || ''));
                         rootsInCurrentPlan.add(rootId);
                     }
                 }
@@ -494,6 +499,8 @@ export class Calendar {
                 existing.budgetHeadId = String(meta.budgetHeadId || existing.budgetHeadId || 'UNALLOCATED');
                 existing.startDate = meta.startDate || existing.startDate || date;
                 existing.endDate = meta.endDate || existing.endDate || existing.startDate || date;
+                existing.assignedTo = meta.assignedTo || existing.assignedTo || userId;
+                existing.assignedToName = meta.assignedToName || existing.assignedToName || workPlan.userName || '';
                 existing.updatedAt = new Date().toISOString();
                 workPlan.updatedAt = new Date().toISOString();
                 const saved = await this.db.put('work_plans', workPlan);
@@ -514,7 +521,9 @@ export class Calendar {
             sourcePlanId: meta.sourcePlanId || null,
             sourceTaskIndex: meta.sourceTaskIndex ?? null,
             taggedById: meta.taggedById || null,
-            taggedByName: meta.taggedByName || null
+            taggedByName: meta.taggedByName || null,
+            assignedTo: meta.assignedTo || userId,
+            assignedToName: meta.assignedToName || workPlan.userName || ''
         });
 
         workPlan.updatedAt = new Date().toISOString();

@@ -4,6 +4,8 @@
  */
 
 import { safeHtml } from './helpers.js';
+import { normalizeTaskStatus } from '../utils/task-status.js';
+import { applyTeamActivitiesBulkShift, buildTeamActivitiesBulkShiftPlan } from '../utils/team-activities-bulk-shift.js';
 
 const DEFAULT_PAGE_SIZE = 50;
 const SEARCH_DEBOUNCE_MS = 250;
@@ -82,9 +84,18 @@ function normalizeActivityRows(rows) {
         const description = row._displayDesc || row.workDescription || row.task || 'Activity';
         const sourceTime = normalizeSourceTime(row);
         const statusSeed = row.status || (type === 'attendance' ? 'completed' : '');
-        const status = window.AppCalendar
-            ? window.AppCalendar.getSmartTaskStatus(row.date, statusSeed)
-            : (statusSeed || 'to-be-started');
+        const status = normalizeTaskStatus(
+            {
+                status: statusSeed,
+                completedDate: row.completedDate,
+                completedAt: row.completedAt,
+                completed_on: row.completed_on,
+                postponedFromDate: row.postponedFromDate,
+                addedFrom: row.addedFrom
+            },
+            row.date,
+            window.AppCalendar?.getSmartTaskStatus
+        );
         return {
             date: row.date || '',
             staffName: row.staffName || row.userName || 'Unknown Staff',
@@ -96,6 +107,23 @@ function normalizeActivityRows(rows) {
             planId: row.planId || row.id || '',
             taskIndex: Number.isInteger(row.taskIndex) ? row.taskIndex : null,
             planScope: row.planScope || 'personal',
+            task: row.task || row.description || row._displayDesc || row.workDescription || '',
+            subPlans: Array.isArray(row.subPlans) ? row.subPlans.slice() : [],
+            tags: Array.isArray(row.tags) ? row.tags.slice() : [],
+            sourcePlanId: row.sourcePlanId || row.planId || row.id || '',
+            sourceTaskIndex: Number.isInteger(row.sourceTaskIndex) ? row.sourceTaskIndex : (Number.isInteger(row.taskIndex) ? row.taskIndex : null),
+            addedFrom: row.addedFrom || '',
+            completedDate: row.completedDate || '',
+            completedAt: row.completedAt || '',
+            completed_on: row.completed_on || '',
+            postponedFromDate: row.postponedFromDate || '',
+            carriedForwardFromDate: row.carriedForwardFromDate || '',
+            carriedForwardFromPlanId: row.carriedForwardFromPlanId || '',
+            carryForwardRootId: row.carryForwardRootId || '',
+            carryForwardPolicy: row.carryForwardPolicy || '',
+            carryForwardReason: row.carryForwardReason || '',
+            isAutoForwarded: row.isAutoForwarded === true,
+            isRemoved: row.isRemoved === true,
             progressPercent: Number.isFinite(Number(row.progressPercent)) ? Number(row.progressPercent) : null,
             progressStatus: row.progressStatus || '',
             progressNote: row.progressNote || '',
@@ -265,6 +293,19 @@ function renderSummary(state) {
         <div class="team-activities-chip">Completed: <strong>${completed}</strong></div>
         <div class="team-activities-chip">Incomplete: <strong>${incomplete}</strong></div>
     `;
+}
+
+function formatBulkShiftSummary(result = {}) {
+    const skippedByState = result.skippedByState || {};
+    const breakdown = ['in', 'out', 'unknown']
+        .map((key) => `${key}: ${Number(skippedByState[key] || 0)}`)
+        .join(', ');
+    return [
+        `Moved to today: ${Number(result.movedToToday || 0)}`,
+        `Postponed to tomorrow: ${Number(result.postponedToTomorrow || 0)}`,
+        `Skipped: ${Number(result.skipped || 0)}`,
+        `Skipped by state: ${breakdown}`
+    ].join('\n');
 }
 
 function renderStaffFilter(state) {
@@ -966,7 +1007,7 @@ if (typeof window !== 'undefined') {
             const targetPlanId = window.AppCalendar.getWorkPlanId(nextDate, targetUserId, scope);
             const movedTask = {
                 ...task,
-                status: '',
+                status: 'postponed',
                 startDate: nextDate,
                 endDate: nextDate
             };
@@ -1046,6 +1087,77 @@ if (typeof window !== 'undefined') {
         }
     };
 
+    window.app_teamActivitiesBulkShift = async function () {
+        try {
+            const state = getTeamActivitiesState();
+            const currentUser = window.AppAuth?.getUser ? window.AppAuth.getUser() : null;
+            const canManageAttendance = !!(currentUser && (currentUser.role === 'Administrator' || currentUser.isAdmin || currentUser.canManageAttendanceSheet));
+            if (!canManageAttendance) {
+                alert('Only admins or attendance managers can bulk shift tasks.');
+                return;
+            }
+            if (!window.AppDB || !window.AppCalendar || typeof applyTeamActivitiesBulkShift !== 'function') {
+                alert('Bulk shift is not available.');
+                return;
+            }
+
+            const pivotDate = String(state.endIso || '').trim();
+            const preview = buildTeamActivitiesBulkShiftPlan({
+                rows: state.filtered || [],
+                users: state.users || [],
+                pivotDate
+            });
+            if (!preview.actions.length) {
+                alert('No eligible tasks were found for the selected date range.');
+                return;
+            }
+
+            const confirmText = [
+                'Bulk shift rule:',
+                '- checked-in staff: open tasks from any prior day move to today',
+                '- checked-out staff: open tasks from any prior day or today move to tomorrow',
+                '',
+                `This will move ${preview.summary.movedToToday} task(s) to today and postpone ${preview.summary.postponedToTomorrow} task(s) to tomorrow.`,
+                `Skipped: ${preview.summary.skipped}`,
+                `Skipped by state - in: ${preview.summary.skippedByState.in}, out: ${preview.summary.skippedByState.out}, unknown: ${preview.summary.skippedByState.unknown}`
+            ].join('\n');
+            const approved = window.appConfirm
+                ? await window.appConfirm(confirmText)
+                : window.confirm(confirmText);
+            if (!approved) {
+                return;
+            }
+
+            const result = await applyTeamActivitiesBulkShift({
+                rows: state.filtered || [],
+                users: state.users || [],
+                pivotDate,
+                db: window.AppDB,
+                calendar: window.AppCalendar,
+                currentUser
+            });
+
+            await refreshData();
+            const summary = formatBulkShiftSummary(result);
+            if (window.app_showSyncToast) {
+                window.app_showSyncToast('Team activities shifted.');
+            }
+            if (window.appAlert) {
+                await window.appAlert(summary, 'Bulk Shift Complete');
+            } else {
+                alert(summary);
+            }
+            if (typeof window.app_refreshHeroAuditLive === 'function') {
+                window.app_refreshHeroAuditLive().catch((refreshErr) => {
+                    console.warn('Hero refresh after bulk shift failed:', refreshErr);
+                });
+            }
+        } catch (err) {
+            console.error('Bulk time shift failed', err);
+            alert('Failed to bulk shift team activities.');
+        }
+    };
+
     window.app_teamActivitiesRemoveTask = async function (btn) {
         try {
             const currentUser = window.AppAuth?.getUser ? window.AppAuth.getUser() : null;
@@ -1084,6 +1196,7 @@ export async function renderTeamActivitiesPage() {
     const state = getTeamActivitiesState();
     const currentUser = window.AppAuth?.getUser ? window.AppAuth.getUser() : null;
     const isAdmin = !!(currentUser && (currentUser.role === 'Administrator' || currentUser.isAdmin));
+    const canManageAttendance = !!(currentUser && (currentUser.role === 'Administrator' || currentUser.isAdmin || currentUser.canManageAttendanceSheet));
     const budgetHeads = (window.app_budgetHeadsCache || [{ id: 'UNALLOCATED', code: 'UNALLOCATED', name: 'Unallocated / To Be Mapped' }]);
     const budgetHeadOptions = ['<option value="all">All budget heads</option>', ...budgetHeads.map((head) => {
         const id = String(head.id || '');
@@ -1100,6 +1213,9 @@ export async function renderTeamActivitiesPage() {
                 <div class="team-activities-actions">
                     <button class="action-btn" onclick="window.app_teamActivitiesRefresh()"><i class="fa-solid fa-rotate"></i> Refresh</button>
                     <button class="action-btn secondary" onclick="window.app_teamActivitiesExportXLSX()"><i class="fa-solid fa-file-excel"></i> Export Excel</button>
+                    ${canManageAttendance ? `
+                        <button class="action-btn secondary" onclick="window.app_teamActivitiesBulkShift()"><i class="fa-solid fa-clock-rotate-left"></i> Bulk Shift</button>
+                    ` : ''}
                     ${isAdmin ? `
                         <button class="action-btn secondary" onclick="window.app_teamActivitiesResetFilters()"><i class="fa-solid fa-filter-circle-xmark"></i> Reset</button>
                         <button class="action-btn secondary" onclick="window.app_findCarryForwardIssues && window.app_findCarryForwardIssues()"><i class="fa-solid fa-triangle-exclamation"></i> Find Auto-Forward Issues</button>
