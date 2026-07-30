@@ -755,7 +755,7 @@ export class Attendance {
 
         const graceEnd = (typeof AppConfig !== 'undefined' && AppConfig ? AppConfig.LATE_CUTOFF_MINUTES : 555) || 555;
         const minorLateEnd = (typeof AppConfig !== 'undefined' && AppConfig ? AppConfig.MINOR_LATE_END_MINUTES : 615) || 615;
-        const lateEnd = (typeof AppConfig !== 'undefined' && AppConfig ? AppConfig.LATE_END_MINUTES : 720) || 720;
+        const _lateEnd = (typeof AppConfig !== 'undefined' && AppConfig ? AppConfig.LATE_END_MINUTES : 720) || 720;
         const postNoonEnd = (typeof AppConfig !== 'undefined' && AppConfig ? AppConfig.POST_NOON_END_MINUTES : 810) || 810;
         const afternoonStart = (typeof AppConfig !== 'undefined' && AppConfig ? AppConfig.AFTERNOON_START_MINUTES : 720) || 720;
 

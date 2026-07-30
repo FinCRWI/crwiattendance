@@ -313,7 +313,7 @@ const syncJourneyReflectionFeed = (state = {}) => {
     JOURNEY_REFLECTION_SYNC_STATE.unsubscribe = window.AppDB.listenQuery(
         AppJourneyReflection.JOURNEY_REFLECTION_COLLECTION,
         [{ field: 'userId', operator: '==', value: ownerId }],
-        {},
+        { silentPermissionDenied: true },
         (rows) => {
             const nextSignature = buildReflectionSignature(rows);
             if (!JOURNEY_REFLECTION_SYNC_STATE.signature) {

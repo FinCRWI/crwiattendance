@@ -1,4 +1,5 @@
 import { safeHtml } from './helpers.js';
+import { AppConfig } from '../config.js';
 import { renderLeaveHistory, renderLeaveRequests, renderPlannedTasksCard, renderStatsCard } from './dashboard.js';
 import { renderStaffDirectoryPage } from './staff-directory.js';
 
@@ -442,9 +443,10 @@ const renderLeaveHistorySection = async (from, to) => {
 const renderMissedCheckoutSection = async (from, to) => {
     const [logs, users] = await Promise.all([
         getAttendanceForRangeAllStaff(from, to),
-        window.AppDB.getCached
+        (window.AppDB.getCached
             ? window.AppDB.getCached(window.AppDB.getCacheKey('sectionUsers', 'users', {}), 60000, () => window.AppDB.getAll('users'))
             : window.AppDB.getAll('users')
+        ).then(u => (u || []).filter(x => !AppConfig.isDemoUser(x)))
     ]);
     const usersMap = new Map((users || []).map((u) => [String(u.id), u]));
     const pending = (logs || []).filter((log) =>

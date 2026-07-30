@@ -34,7 +34,7 @@ export class Simulation {
                 payload,
                 createdAt: Date.now()
             }, { silentPermissionDenied: true });
-        } catch (error) {
+        } catch {
             // best-effort only
         }
     }
@@ -52,6 +52,9 @@ export class Simulation {
             localStorage.setItem(this.cleanupFlag, 'true');
         }
 
+        // Remove old Office Picnic events that were incorrectly marked as holidays
+        await this.removeOfficePicnicEvents();
+
         if (localStorage.getItem(this.simulationFlag)) {
             console.log('Simulation already ran. Use window.AppSimulation.forceRun() to force.');
             return;
@@ -59,6 +62,23 @@ export class Simulation {
 
         await this.forceRun();
         localStorage.setItem(this.simulationFlag, 'true');
+    }
+
+    async removeOfficePicnicEvents() {
+        try {
+            const allEvents = await this.db.getAll('events');
+            const picnicEvents = (allEvents || []).filter(e =>
+                String(e?.title || '').toLowerCase().includes('office picnic')
+            );
+            for (const event of picnicEvents) {
+                await this.db.delete('events', event.id);
+            }
+            if (picnicEvents.length > 0) {
+                console.log(`Cleaned up ${picnicEvents.length} old Office Picnic event(s) from events collection.`);
+            }
+        } catch {
+            // best-effort cleanup
+        }
     }
 
     async cleanupLegacyDummyData() {
@@ -159,9 +179,9 @@ export class Simulation {
             const holidayDate = new Date(today);
             holidayDate.setDate(holidayDate.getDate() + 1);
             await window.AppCalendar.addEvent({
-                title: 'Office Picnic/Holiday',
+                title: 'Office Picnic',
                 date: holidayDate.toISOString().split('T')[0],
-                type: 'holiday'
+                type: 'social'
             });
         }
 

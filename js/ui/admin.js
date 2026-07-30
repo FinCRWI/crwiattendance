@@ -800,8 +800,8 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
     const renderDataManagementBlock = (isExpanded = false) => {
         const startId = isExpanded ? 'staff-reset-start-date-max' : 'staff-reset-start-date';
         const endId = isExpanded ? 'staff-reset-end-date-max' : 'staff-reset-end-date';
-        const fromRead = `document.getElementById('${startId}')?.value || ''`;
-        const toRead = `document.getElementById('${endId}')?.value || ''`;
+        const _fromRead = `document.getElementById('${startId}')?.value || ''`;
+        const _toRead = `document.getElementById('${endId}')?.value || ''`;
 
         return `
             <p class="text-muted">Create a full backup before running a staff activity reset.</p>
@@ -835,8 +835,8 @@ export async function renderAdmin(auditStartDate = null, auditEndDate = null) {
     const renderSecurityAuditsBlock = (isExpanded = false) => {
         const startId = isExpanded ? 'audit-start-max' : 'audit-start';
         const endId = isExpanded ? 'audit-end-max' : 'audit-end';
-        const startRead = `document.getElementById('${startId}')?.value || ''`;
-        const endRead = `document.getElementById('${endId}')?.value || ''`;
+        const _startRead = `document.getElementById('${startId}')?.value || ''`;
+        const _endRead = `document.getElementById('${endId}')?.value || ''`;
         return `
             <div class="admin-audit-filter-row">
                 <input type="date" id="${startId}" value="${auditStartDate}" class="adm-text-sm">

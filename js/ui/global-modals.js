@@ -26,7 +26,7 @@ if (!window._globalModalActionsRegistered) {
 }
 
 export function renderModals() {
-    const user = window.AppAuth?.getUser();
+    const _user = window.AppAuth?.getUser();
     const budgetSelectHtml = typeof window.app_renderBudgetHeadOptions === 'function'
         ? window.app_renderBudgetHeadOptions('')
         : '<option value="UNALLOCATED">Unallocated / To Be Mapped</option>';

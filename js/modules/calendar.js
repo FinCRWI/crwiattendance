@@ -387,20 +387,16 @@ export class Calendar {
                 }))
                 .filter((plan) => plan.plans.length > 0);
 
-            return {
+            const result = {
                 leaves: enrichedLeaves,
                 events: dedupedEvents,
                 workPlans: normalizedWorkPlans
             };
             this._plansCache.set(cacheKey, {
-                value: {
-                    leaves: enrichedLeaves,
-                    events: dedupedEvents,
-                    workPlans: normalizedWorkPlans
-                },
+                value: result,
                 expiresAt: Date.now() + 60000
             });
-            return this._plansCache.get(cacheKey).value;
+            return result;
         } catch (err) {
             console.error("Failed to fetch calendar plans:", err);
             return { leaves: [], events: [], workPlans: [] };

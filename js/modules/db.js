@@ -776,6 +776,9 @@ export class Database {
                 this.track('listenQuery', collectionName, data.length);
                 callback(data, snapshot);
             }, (error) => {
+                if (options.silentPermissionDenied && this.isPermissionDenied(error)) {
+                    return;
+                }
                 console.error(`Realtime query listener error in ${collectionName}:`, error);
             });
         } catch (error) {

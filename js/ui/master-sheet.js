@@ -4,11 +4,12 @@
  */
 
 import { safeHtml } from './helpers.js';
+import { AppConfig } from '../config.js';
 
 export async function renderMasterSheet(month = null, year = null) {
     const currentUser = window.AppAuth.getUser();
     const canAdminAttendance = window.app_hasPerm('attendance', 'admin', currentUser);
-    const users = await window.AppDB.getAll('users');
+    const users = (await window.AppDB.getAll('users')).filter(u => !AppConfig.isDemoUser(u));
 
     const now = new Date();
     const currentMonth = month !== null ? parseInt(month) : now.getMonth();
@@ -347,29 +348,25 @@ export async function renderMasterSheet(month = null, year = null) {
                     cellContent = 'P'; cellStyle = 'color: #10b981; font-weight: bold; font-size: 0.9rem;'; tooltip = 'Checked in (pending checkout)';
                 } else if (isFutureDate || isBeforeJoinDate) {
                     cellContent = '-'; cellStyle = 'color: #94a3b8; font-weight: 600;'; tooltip = isFutureDate ? 'Future date' : `Before joining date (${u.joinDate})`;
-                } else if (hasHolidayEvent || dayPolicy === 'holiday') {
+                } else if (hasHolidayEvent) {
                     cellContent = 'H';
                     cellStyle = 'color: #64748b; font-weight: 700;';
-                    const holidayReason = hasHolidayEvent
-                        ? `Holiday: ${Array.from(new Set(holidayTitles)).join(', ')}`
-                        : 'Holiday';
-                    tooltip = holidayReason;
+                    tooltip = `Holiday: ${Array.from(new Set(holidayTitles)).join(', ')}`;
+                } else if (dayPolicy === 'holiday') {
+                    cellContent = 'H';
+                    cellStyle = 'color: #64748b; font-weight: 700;';
+                    const d = new Date(`${dateStr}T00:00:00`);
+                    tooltip = d.getDay() === 0 ? 'Weekly off: Sunday' : 'Weekly off: Saturday';
+                } else if (dayPolicy === 'halfday') {
+                    cellContent = '-';
+                    cellStyle = 'color: #94a3b8; font-weight: 600;';
+                    tooltip = 'Half-day Saturday';
                 } else {
                     cellContent = 'A'; cellStyle = 'color: #ef4444; font-weight: bold;'; tooltip = 'Absent';
                 }
             }
 
-            const canViewTooltip = canAdminAttendance || (currentUser && (
-                u.id === currentUser.id ||
-                u.user_id === currentUser.id ||
-                (u.username && currentUser.username && u.username === currentUser.username) ||
-                (u.email && currentUser.email && u.email === currentUser.email)
-            ));
-            if (!canViewTooltip) {
-                tooltip = '';
-            }
-
-            return `<td style="text-align:center; ${canAdminAttendance ? 'cursor:pointer;' : ''} border-right: 1px solid #eee; padding:2px; font-size:0.75rem; ${cellStyle}" ${tooltip ? `title="${tooltip}"` : ''} ${canAdminAttendance ? `onclick="window.app_openCellOverride('${u.id}', '${dateStr}')"` : ''}>${cellContent}</td>`;
+            return `<td style="text-align:center; ${canAdminAttendance ? 'cursor:pointer;' : ''} border-right: 1px solid #eee; padding:2px; font-size:0.75rem; ${cellStyle}" title="${tooltip}" ${canAdminAttendance ? `onclick="window.app_openCellOverride('${u.id}', '${dateStr}')"` : ''}>${cellContent}</td>`;
         }).join('')}
                                 </tr>`;
     }).join('')}

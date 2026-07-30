@@ -79,18 +79,23 @@ function inferSeason(summary) {
 
 function findTodayEvent(icalText, todayYmd) {
     const blocks = icalText.split('BEGIN:VEVENT');
+    let fallback = null;
     for (let i = 1; i < blocks.length; i++) {
         const block = blocks[i];
         const dtstartMatch = block.match(/DTSTART(?:;VALUE=DATE)?:\s*(\d{8})/);
         if (!dtstartMatch || dtstartMatch[1] !== todayYmd) continue;
         const summaryMatch = block.match(/SUMMARY:\s*(.+?)(?:\r?\n(?![ \t])|\r?\nEND:)/s);
-        if (summaryMatch) return summaryMatch[1].replace(/\\,/g, ',').replace(/\\n/g, ' ').trim();
+        if (!summaryMatch) continue;
+        const summary = summaryMatch[1].replace(/\\,/g, ',').replace(/\\n/g, ' ').trim();
+        // Prefer events with a liturgical rank prefix [S], [F], [M], [m], [m*]
+        if (/^\[[SFMm*]+\]/.test(summary)) return summary;
+        if (!fallback) fallback = summary;
     }
-    return null;
+    return fallback;
 }
 
 /**
- * Try to fetch a saint image from Wikipedia.
+ * Fetch a saint image from the Wikipedia REST API.
  * Returns image URL or null.
  */
 async function fetchSaintImage(saintName) {
@@ -109,6 +114,7 @@ async function fetchSaintImage(saintName) {
         return null;
     }
 }
+
 
 /**
  * Returns today's liturgical celebration.
@@ -143,15 +149,16 @@ export async function getTodayFeast() {
 }
 
 /**
- * Fetch saint image (non-blocking, deferred).
- * Updates the widget image element when loaded.
+ * Fetch a feast/saint image (non-blocking, deferred).
+ * Uses Wikipedia REST API for saint names; seasonal icon shown otherwise.
  */
-export async function loadFeastImage(saintName, imgEl) {
+export async function loadFeastImage(saintName, imgEl, iconEl) {
     if (!saintName || !imgEl) return;
     const image = await fetchSaintImage(saintName);
     if (image && imgEl) {
         imgEl.src = image;
         imgEl.style.display = 'block';
+        if (iconEl) iconEl.style.display = 'none';
     }
 }
 

@@ -186,7 +186,7 @@ function buildBudgetHeadLookup() {
     return lookup;
 }
 
-function getBudgetHeadLabel(budgetHeadId, lookup = buildBudgetHeadLookup()) {
+function _getBudgetHeadLabel(budgetHeadId, lookup = buildBudgetHeadLookup()) {
     const id = String(budgetHeadId || '').trim();
     if (!id) return '';
     const head = lookup.get(id);
@@ -1335,7 +1335,7 @@ const isAutoForwardedTask = (task) => {
         || !!task.autoForwardedAt;
 };
 
-function scheduleDayPlanMaintenance({ date, targetId, forcedScope, options, modalContent }) {
+function scheduleDayPlanMaintenance({ date, targetId, _forcedScope, options, modalContent }) {
     const todayKey = AppCalendar?.getTodayKey ? AppCalendar.getTodayKey() : '';
     const needsCarryForward = !options?.skipCarryForwardSync && AppCalendar?.ensureCarryForwardForDate && date <= todayKey;
     const needsCleanup = !options?.skipCarryForwardCleanup && AppCalendar?.cleanupInvalidTodayCarryForward && date === todayKey;

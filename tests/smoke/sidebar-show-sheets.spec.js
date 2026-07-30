@@ -3,7 +3,7 @@ const { test, expect } = require('@playwright/test');
 test('master-sheet becomes visible when show_hidden_sheets is enabled', async ({ page }) => {
   // Ensure the preference is set before any app scripts run
   await page.addInitScript(() => {
-    try { localStorage.setItem('show_hidden_sheets', 'true'); } catch (e) { }
+    try { localStorage.setItem('show_hidden_sheets', 'true'); } catch (e) { void e; }
   });
 
   await page.goto('/index.html', { waitUntil: 'domcontentloaded' });

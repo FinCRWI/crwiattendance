@@ -151,7 +151,7 @@ function save(uid) {
   if (!db) return;
 
   let prev = {};
-  try { const x = JSON.parse(localStorage.getItem(STORE + uid) || '{}'); prev = x._s || {}; } catch {}
+  try { const x = JSON.parse(localStorage.getItem(STORE + uid) || '{}'); prev = x._s || {}; } catch (e) { void e; }
 
   const lay = {};
   for (const [zn, sel] of Object.entries(ZONE_SEL)) {
@@ -178,7 +178,7 @@ function save(uid) {
   });
   Object.assign(prev, s);
   lay._ver = LAYOUT_VER; lay._s = prev;
-  try { localStorage.setItem(STORE + uid, JSON.stringify(lay)); } catch {}
+  try { localStorage.setItem(STORE + uid, JSON.stringify(lay)); } catch (e) { void e; }
 }
 
 function load(uid) {

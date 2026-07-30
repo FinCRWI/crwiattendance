@@ -524,7 +524,7 @@ window.app_updateNavigationSections = (user = window.AppAuth?.getUser()) => {
     // Determine what each user can see
     const overrideShowHiddenSheets = (window.app_getShowHiddenSheets && window.app_getShowHiddenSheets()) || false;
     const canSeeDashboard = window.app_hasPerm('dashboard', 'view', user);
-    const canSeeLeaves = window.app_hasPerm('leaves', 'view', user);
+    const _canSeeLeaves = window.app_hasPerm('leaves', 'view', user);
     const canSeeUsers = window.app_hasPerm('users', 'view', user);
     // Attendance/master-sheet visibility can be overridden by the 'show hidden sheets' toggle
     const canSeeAttendance = window.app_hasPerm('attendance', 'view', user) || overrideShowHiddenSheets;
@@ -671,7 +671,7 @@ function updateThemeIcons(theme) {
 window.app_getShowHiddenSheets = () => {
     try {
         return localStorage.getItem('show_hidden_sheets') === 'true';
-    } catch (err) {
+    } catch {
         return false;
     }
 };
@@ -679,7 +679,7 @@ window.app_getShowHiddenSheets = () => {
 window.app_setShowHiddenSheets = (value) => {
     try {
         localStorage.setItem('show_hidden_sheets', value ? 'true' : 'false');
-    } catch (err) {
+    } catch {
         // ignore
     }
 };
@@ -1946,6 +1946,7 @@ window.app_removeCarryForwardIssues = async function () {
                 };
                 plan.updatedAt = new Date().toISOString();
                 await window.AppDB.put('work_plans', plan);
+                console.log('[carryforward] removed task from plan', issue.planId, 'index', targetIndex);
                 removed += 1;
             } catch (err) {
                 failed += 1;
@@ -5179,7 +5180,9 @@ window.app_collectCheckoutTaskUpdates = () => {
     const map = window.app_checkoutTaskDetails || {};
     Object.keys(map).forEach((key) => {
         const detail = map[key];
-        if (!detail || !detail.action) return;
+        if (!detail || !detail.action) {
+            return;
+        }
         const { planId, taskIndex } = window.app_parseCheckoutTaskKey(key);
         let error = '';
         if (detail.action === 'postpone') {
@@ -5212,98 +5215,6 @@ window.app_collectCheckoutTaskUpdates = () => {
 
 window.app_closeCheckoutActionModal = () => {
     document.getElementById('checkout-action-detail-modal')?.remove();
-};
-
-window.app_openCheckoutActionModal = (key) => {
-    const details = window.app_checkoutTaskDetails?.[key];
-    if (!details || !details.action) return;
-    const meta = window.app_checkoutTaskMeta?.[key] || {};
-    const userMap = window.app_checkoutUserMap || {};
-    const currentUserId = window.AppAuth.getUser()?.id;
-    const current = document.getElementById('checkout-action-detail-modal');
-    if (current) current.remove();
-
-    const actionLabel = details.action === 'complete'
-        ? 'Complete'
-        : details.action === 'postpone'
-            ? 'Postpone'
-            : details.action === 'delegate'
-                ? 'Delegate'
-                : 'Action';
-    const chips = '';
-    const postponeDate = app_escapeHtml(details.actionMeta?.postponeDate || new Date(Date.now() + 86400000).toISOString().split('T')[0]);
-    const postponeReason = app_escapeHtml(details.actionMeta?.postponeReason || '');
-    const completionNote = '';
-    const delegateNote = app_escapeHtml(details.actionMeta?.delegateNote || '');
-    const delegateUserId = app_escapeHtml(details.actionMeta?.delegateUserId || '');
-    const progressNote = '';
-    const candidateOptions = Object.keys(userMap).filter((userId) => String(userId) !== String(currentUserId)).map((userId) => {
-        const selected = delegateUserId && delegateUserId === String(userId) ? 'selected' : '';
-        return `<option value="${app_escapeHtml(userId)}" ${selected}>${app_escapeHtml(userMap[userId])}</option>`;
-    }).join('');
-
-    const modal = document.createElement('div');
-    modal.id = 'checkout-action-detail-modal';
-    modal.className = 'modal-overlay checkout-action-detail-modal';
-    modal.setAttribute('data-checkout-key', key);
-    modal.innerHTML = `
-        <div class="modal-content checkout-action-detail-content">
-            <div class="checkout-action-detail-header">
-                <div>
-                    <div class="checkout-action-detail-title">${app_escapeHtml(meta.text || 'Task')}</div>
-                    <div class="checkout-action-detail-sub">${app_escapeHtml(actionLabel)} • ${details.progressPercent}% • ${app_escapeHtml(app_checkoutStatusLabels[details.progressStatus] || '')}</div>
-                </div>
-                <button type="button" class="checkout-action-detail-close" onclick="window.app_closeCheckoutActionModal()">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
-            </div>
-            <div class="checkout-task-panel-body">
-                <div class="checkout-task-panel-header">
-                    <span>Action Details</span>
-                    <span class="checkout-task-saved" data-saved-indicator>Saved</span>
-                </div>
-                <div class="checkout-task-field">
-                    <label>Progress <span class="checkout-task-progress-value" data-progress-value>${details.progressPercent}%</span></label>
-                    <input type="range" min="0" max="100" value="${details.progressPercent}" data-progress-input oninput="window.app_updateCheckoutTaskProgress('${app_escapeJsSingleQuote(key)}', this.value)">
-                </div>
-                <div class="checkout-task-field">
-                    <label>Status</label>
-                    <div class="checkout-task-status-chips">
-                        ${chips}
-                    </div>
-                </div>
-                <div class="checkout-task-field">
-                    <label>Note</label>
-                    <textarea rows="2" data-progress-note placeholder="What changed? (optional)" oninput="window.app_updateCheckoutTaskNote('${app_escapeJsSingleQuote(key)}', this.value)">${progressNote}</textarea>
-                </div>
-                <div class="checkout-task-action-extra" data-action-panel-section="complete" style="display:${details.action === 'complete' ? 'block' : 'none'};">
-                    <label>Completion Note</label>
-                    <textarea rows="2" data-action-field="completionNote" placeholder="Optional details for completion." oninput="window.app_updateCheckoutTaskActionMeta('${app_escapeJsSingleQuote(key)}','completionNote', this.value)">${completionNote}</textarea>
-                </div>
-                <div class="checkout-task-action-extra" data-action-panel-section="postpone" style="display:${details.action === 'postpone' ? 'block' : 'none'};">
-                    <label>New Date</label>
-                    <input type="date" data-action-field="postponeDate" value="${postponeDate}" onchange="window.app_updateCheckoutTaskActionMeta('${app_escapeJsSingleQuote(key)}','postponeDate', this.value)">
-                    <label>Reason</label>
-                    <textarea rows="2" data-action-field="postponeReason" placeholder="Why postponed?" oninput="window.app_updateCheckoutTaskActionMeta('${app_escapeJsSingleQuote(key)}','postponeReason', this.value)">${postponeReason}</textarea>
-                </div>
-                <div class="checkout-task-action-extra" data-action-panel-section="delegate" style="display:${details.action === 'delegate' ? 'block' : 'none'};">
-                    <label>Assign To</label>
-                    <select data-action-field="delegateUserId" onchange="window.app_updateCheckoutTaskActionMeta('${app_escapeJsSingleQuote(key)}','delegateUserId', this.value)">
-                        <option value="">Select staff</option>
-                        ${candidateOptions}
-                    </select>
-                    <label>Handoff Note</label>
-                    <textarea rows="2" data-action-field="delegateNote" placeholder="Handoff context (optional)." oninput="window.app_updateCheckoutTaskActionMeta('${app_escapeJsSingleQuote(key)}','delegateNote', this.value)">${delegateNote}</textarea>
-                </div>
-                <div class="checkout-task-inline-error" data-inline-error></div>
-            </div>
-            <div class="checkout-action-detail-footer">
-                <button type="button" class="action-btn secondary" onclick="window.app_closeCheckoutActionModal()">Done</button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(modal);
-    window.app_syncCheckoutTaskPanel(key);
 };
 
 window.app_renderCheckoutActionPreview = () => {
@@ -5414,19 +5325,19 @@ window.app_openCheckoutActionModal = (key) => {
                     <div class="checkout-task-action-help">This task will be marked completed during check-out.</div>
                 </div>
                 <div class="checkout-task-action-extra" data-action-panel-section="postpone" style="display:${details.action === 'postpone' ? 'block' : 'none'};">
-                    <label>New Date</label>
-                    <input type="date" data-action-field="postponeDate" value="${postponeDate}" onchange="window.app_updateCheckoutTaskActionMeta('${app_escapeJsSingleQuote(key)}','postponeDate', this.value)">
-                    <label>Reason</label>
-                    <textarea rows="2" data-action-field="postponeReason" placeholder="Optional reason" oninput="window.app_updateCheckoutTaskActionMeta('${app_escapeJsSingleQuote(key)}','postponeReason', this.value)">${postponeReason}</textarea>
+                    <label for="postpone-date-${app_escapeJsSingleQuote(key)}">New Date</label>
+                    <input id="postpone-date-${app_escapeJsSingleQuote(key)}" type="date" data-action-field="postponeDate" value="${postponeDate}" onchange="window.app_updateCheckoutTaskActionMeta('${app_escapeJsSingleQuote(key)}','postponeDate', this.value)">
+                    <label for="postpone-reason-${app_escapeJsSingleQuote(key)}">Reason</label>
+                    <textarea id="postpone-reason-${app_escapeJsSingleQuote(key)}" rows="2" data-action-field="postponeReason" placeholder="Optional reason" oninput="window.app_updateCheckoutTaskActionMeta('${app_escapeJsSingleQuote(key)}','postponeReason', this.value)">${postponeReason}</textarea>
                 </div>
                 <div class="checkout-task-action-extra" data-action-panel-section="delegate" style="display:${details.action === 'delegate' ? 'block' : 'none'};">
-                    <label>Assign To</label>
-                    <select data-action-field="delegateUserId" onchange="window.app_updateCheckoutTaskActionMeta('${app_escapeJsSingleQuote(key)}','delegateUserId', this.value)">
+                    <label for="delegate-user-${app_escapeJsSingleQuote(key)}">Assign To</label>
+                    <select id="delegate-user-${app_escapeJsSingleQuote(key)}" data-action-field="delegateUserId" onchange="window.app_updateCheckoutTaskActionMeta('${app_escapeJsSingleQuote(key)}','delegateUserId', this.value)">
                         <option value="">Select staff</option>
                         ${candidateOptions}
                     </select>
-                    <label>Handoff Note</label>
-                    <textarea rows="2" data-action-field="delegateNote" placeholder="Handoff context (optional)." oninput="window.app_updateCheckoutTaskActionMeta('${app_escapeJsSingleQuote(key)}','delegateNote', this.value)">${delegateNote}</textarea>
+                    <label for="delegate-note-${app_escapeJsSingleQuote(key)}">Handoff Note</label>
+                    <textarea id="delegate-note-${app_escapeJsSingleQuote(key)}" rows="2" data-action-field="delegateNote" placeholder="Handoff context (optional)." oninput="window.app_updateCheckoutTaskActionMeta('${app_escapeJsSingleQuote(key)}','delegateNote', this.value)">${delegateNote}</textarea>
                 </div>
                 <div class="checkout-task-inline-error" data-inline-error></div>
             </div>
@@ -5490,16 +5401,22 @@ window.app_renderCheckoutActionPreview = () => {
 };
 
 window.app_applyCheckoutTaskUpdates = async (updates = [], options = {}) => {
-    if (!Array.isArray(updates) || updates.length === 0) return;
+    if (!Array.isArray(updates) || updates.length === 0) {
+        return;
+    }
     const currentUser = window.AppAuth.getUser();
     const updaterId = currentUser?.id || currentUser?.name || 'staff';
     const effectiveDate = String(options.effectiveDate || new Date().toISOString().split('T')[0]);
     const eventTimestamp = String(options.timestamp || new Date().toISOString());
     for (const update of updates) {
         const plan = await window.AppDB.get('work_plans', update.planId).catch(() => null);
-        if (!plan || !Array.isArray(plan.plans)) continue;
+        if (!plan || !Array.isArray(plan.plans)) {
+            continue;
+        }
         const task = plan.plans[update.taskIndex];
-        if (!task) continue;
+        if (!task) {
+            continue;
+        }
         task.progressPercent = update.progressPercent;
         task.progressStatus = update.progressStatus;
         task.progressNote = update.progressNote;

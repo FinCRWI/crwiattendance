@@ -335,9 +335,8 @@
 .dashboard-feast-widget-body {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0.85rem 1rem;
-  gap: 0.75rem;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
 }
 
 .dashboard-feast-widget-text {
@@ -346,7 +345,7 @@
 }
 
 .dashboard-feast-widget-label {
-  font-size: 0.6rem;
+  font-size: 0.65rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -356,7 +355,7 @@
 
 .dashboard-feast-widget-name {
   font-family: 'Manrope', sans-serif;
-  font-size: 0.9rem;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--md-primary);
   line-height: 1.3;
@@ -364,20 +363,33 @@
 }
 
 .dashboard-feast-widget-type {
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   font-weight: 500;
   color: var(--md-text-muted);
   margin-top: 0.15rem;
 }
 
 .dashboard-feast-widget-img {
-  width: 48px;
-  height: 48px;
-  border-radius: 10px;
+  width: 72px;
+  height: 72px;
+  border-radius: 12px;
   object-fit: cover;
   flex-shrink: 0;
   border: 2px solid rgba(255, 255, 255, 0.8);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.dashboard-feast-widget-icon {
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.2rem;
+  color: rgba(255, 255, 255, 0.85);
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.15);
 }
 
 [data-theme="dark"] .dashboard-feast-widget {
@@ -952,7 +964,8 @@
   border: none;
 }
 
-.modern-dashboard .dashboard-stats-row .dashboard-stats-card:first-child .dashboard-stats-card-title {
+.modern-dashboard .dashboard-stats-row .dashboard-stats-card:first-child .dashboard-stats-card-title,
+.dashboard-staff-view .dashboard-stats-row .dashboard-stats-card:first-child .dashboard-stats-card-title {
   color: white;
 }
 
@@ -2337,18 +2350,23 @@ textarea.gm-input {
   border-left-width: 3px;
 }
 .dashboard-staff-view .dashboard-feast-widget-body {
-  padding: 0.45rem 0.65rem;
-  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  gap: 0.75rem;
 }
 .dashboard-staff-view .dashboard-feast-widget-name {
-  font-size: 0.78rem;
+  font-size: 0.9rem;
 }
 .dashboard-staff-view .dashboard-feast-widget-type {
-  font-size: 0.6rem;
+  font-size: 0.65rem;
 }
 .dashboard-staff-view .dashboard-feast-widget-img {
-  width: 36px;
-  height: 36px;
+  width: 60px;
+  height: 60px;
+}
+.dashboard-staff-view .dashboard-feast-widget-icon {
+  width: 60px;
+  height: 60px;
+  font-size: 1.8rem;
 }
 .dashboard-staff-view .dashboard-staff-leave-summary {
   padding: 0.55rem 0.75rem;

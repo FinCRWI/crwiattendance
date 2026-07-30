@@ -14,14 +14,14 @@ import {
   DASHBOARD_CARD_MODE_FULLSCREEN,
   DASHBOARD_CARD_MODES,
   DASHBOARD_CARD_CONTROL_EXCLUDED_CLASSES,
-  DASHBOARD_MAX_OVERLAY_ID,
-  DASHBOARD_MAX_TITLE_ID,
+  DASHBOARD_MAX_OVERLAY_ID as _DASHBOARD_MAX_OVERLAY_ID,
+  DASHBOARD_MAX_TITLE_ID as _DASHBOARD_MAX_TITLE_ID,
   DASHBOARD_MAX_BODY_ID,
-  DASHBOARD_MAX_RENDER_DELAY_MS,
+  DASHBOARD_MAX_RENDER_DELAY_MS as _DASHBOARD_MAX_RENDER_DELAY_MS,
   closeDashboardCardMaxOverlay,
-  openDashboardCardMaxOverlay,
+  openDashboardCardMaxOverlay as _openDashboardCardMaxOverlay,
   getDashboardCardElementById,
-  setDashboardCardModeClass,
+  setDashboardCardModeClass as _setDashboardCardModeClass,
   applyDashboardCardMode
 } from './dashboard-card-mode.js';
 import { onAction } from '../utils/action-router.js';
@@ -251,12 +251,12 @@ export function renderPlannedTasksCard(workPlans, targetStaff = null, options = 
     const targetUserId = String(options.targetStaffId || targetStaff?.id || currentUser?.id || '').trim();
     const targetStaffName = String(options.targetStaffName || targetStaff?.name || currentUser?.name || 'Staff');
     const title = String(options.title || "Today's Planned Tasks").trim();
-    const subtitle = String(options.subtitle || `${fromKey}${fromKey === toKey ? '' : ` to ${toKey}`}`).trim();
+    const _subtitle = String(options.subtitle || `${fromKey}${fromKey === toKey ? '' : ` to ${toKey}`}`).trim();
     const emptyMessage = String(options.emptyMessage || 'No planned tasks found.').trim();
     const filteredRows = normalizeDashboardPlannedTaskRows(workPlans, targetUserId, fromKey, toKey);
-    const total = filteredRows.length;
-    const completed = filteredRows.filter((row) => String(row.status || '').toLowerCase() === 'completed').length;
-    const open = filteredRows.filter((row) => row.isActionable).length;
+    const _total = filteredRows.length;
+    const _completed = filteredRows.filter((row) => String(row.status || '').toLowerCase() === 'completed').length;
+    const _open = filteredRows.filter((row) => row.isActionable).length;
     const isAdmin = !!(currentUser && window.app_hasPerm?.('dashboard', 'admin', currentUser));
     const cardClass = String(options.cardClass || 'dashboard-worklog-card').trim() || 'dashboard-worklog-card';
     const listClass = String(options.listClass || 'dashboard-planned-task-list').trim() || 'dashboard-planned-task-list';
@@ -841,7 +841,7 @@ export function renderHeroCard(heroData, heroMeta = {}) {
         </div>`;
 }
 
-export function renderWorkLog(workPlans, collabs = [], targetStaff = null, minutes = [], options = {}) {
+export function renderWorkLog(workPlans, _collabs = [], targetStaff = null, _minutes = [], options = {}) {
     return renderPlannedTasksCard(workPlans, targetStaff, {
         title: options.title || "Today's Planned Tasks",
         subtitle: options.subtitle || 'From team activities',
@@ -933,7 +933,7 @@ export function renderActivityList(allLogs, startStr, endStr, targetStaffId, col
             html += `<div class="dashboard-activity-date">${log.date}</div>`;
             lastDate = log.date;
         }
-        const borderColor = log._isCollab ? '#10b981' : (log._isMinute ? '#6366f1' : '#e5e7eb');
+        const _borderColor = log._isCollab ? '#10b981' : (log._isMinute ? '#6366f1' : '#e5e7eb');
         const collabClass = log._isCollab ? 'dashboard-activity-item-collab' : (log._isMinute ? 'dashboard-activity-item-minute' : '');
         const progressMeta = renderProgressMeta(log);
         const editActionType = log._isMinute
@@ -1982,8 +1982,8 @@ export async function renderDashboard() {
         window.AppCalendar ? window.AppCalendar.getPlans() : { leaves: [], events: [] },
         window.app_hasPerm('leaves', 'view') ? window.AppLeaves.getPendingLeaves() : Promise.resolve([]),
         window.AppDB.getCached
-            ? window.AppDB.getCached(window.AppDB.getCacheKey('dashboardUsers', 'users', {}), (AppConfig?.READ_CACHE_TTLS?.users || 60000), () => window.AppDB.getAll('users'))
-            : window.AppDB.getAll('users'),
+            ? window.AppDB.getCached(window.AppDB.getCacheKey('dashboardUsers', 'users', {}), (AppConfig?.READ_CACHE_TTLS?.users || 60000), () => window.AppDB.getAll('users')).then(users => users.filter(u => !AppConfig.isDemoUser(u)))
+            : window.AppDB.getAll('users').then(users => users.filter(u => !AppConfig.isDemoUser(u))),
         window.AppCalendar ? window.AppCalendar.getCollaborations(targetStaffId) : Promise.resolve([]),
         window.app_hasPerm('leaves', 'view')
             ? (() => {
@@ -2260,7 +2260,7 @@ export async function renderDashboard() {
     let statsRowHTML = '';
     const primaryRowThirdCard = renderActivityLog(staffActivities);
     const renderYearlyPlanHTML = renderYearlyPlan(calendarPlans);
-    const feastWidgetHTML = `<div class="dashboard-feast-widget" id="dashboard-feast-widget"><div class="dashboard-feast-widget-body"><div class="dashboard-feast-widget-text"><div class="dashboard-feast-widget-label">Today's Feast</div><div class="dashboard-feast-widget-name" id="dashboard-feast-name">Loading...</div><div class="dashboard-feast-widget-type" id="dashboard-feast-type"></div></div><img class="dashboard-feast-widget-img" id="dashboard-feast-img" alt="" style="display:none"></div></div>`;
+    const feastWidgetHTML = `<div class="dashboard-feast-widget" id="dashboard-feast-widget"><div class="dashboard-feast-widget-body"><div class="dashboard-feast-widget-text"><div class="dashboard-feast-widget-label">Today's Feast</div><div class="dashboard-feast-widget-name" id="dashboard-feast-name">Loading...</div><div class="dashboard-feast-widget-type" id="dashboard-feast-type"></div></div><i class="dashboard-feast-widget-icon" id="dashboard-feast-icon"></i><img class="dashboard-feast-widget-img" id="dashboard-feast-img" alt="" style="display:none"></div></div>`;
     if (canViewAdminSections) {
         const hasExplicitSelection = !!window.app_selectedSummaryStaffId && window.app_selectedSummaryStaffId !== user.id;
         const weekRange = getWeekRange(leaveHistoryDate);
@@ -2285,32 +2285,32 @@ export async function renderDashboard() {
 
         detailSectionHTML = `
                     <div class="dashboard-detail-section" data-zone-id="detailSection">
-                        ${wvIf('feast', feastWidgetHTML)}
                         ${isFullAdmin ? `<div class="dashboard-admin-actions-row">
                             ${renderLeaveRequests(pendingLeaves, workFromHomeRows)}
                             ${renderMissedCheckoutRequests(missedCheckoutRequests)}
                             ${historyHTML}
                         </div>` : ''}
-                        ${wvIf('hero', heroHTML)}
                         ${wvIf('teamActivity', primaryRowThirdCard)}
                         ${wvIf('journeyReflection', journeyReflectionHTML)}
                     </div>`;
         statsRowHTML = wvIf('statsRow', `
             <div class="dashboard-stats-row" data-zone-id="statsRow">
+                ${wvIf('feast', feastWidgetHTML)}
+                ${wvIf('hero', heroHTML)}
                 ${renderStatsCard(isViewingSelf ? monthlyStats.label : `${monthlyStats.label} - ${targetStaff?.name || 'Staff'}`, isViewingSelf ? 'Monthly Stats' : 'Viewing Staff Monthly Stats', monthlyStats, 'monthly')}
                 ${renderStatsCard('Yearly Summary', isViewingSelf ? yearlyStats.label : `${yearlyStats.label} for ${targetStaff?.name || 'Staff'}`, yearlyStats, 'yearly')}
             </div>`);
     } else {
         detailSectionHTML = `
                     <div class="dashboard-detail-section" data-zone-id="detailSection">
-                        ${wvIf('feast', feastWidgetHTML)}
                         ${wvIf('teamActivity', primaryRowThirdCard)}
                         ${wvIf('staffLeaveSummary', renderStaffLeaveSummary(allLeaves, user))}
-                        ${wvIf('hero', heroHTML)}
                         ${wvIf('journeyReflection', journeyReflectionHTML)}
                     </div>`;
         statsRowHTML = wvIf('statsRow', `
             <div class="dashboard-stats-row" data-zone-id="statsRow">
+                ${wvIf('feast', feastWidgetHTML)}
+                ${wvIf('hero', heroHTML)}
                 ${renderStatsCard(monthlyStats.label, 'Monthly Stats', monthlyStats, 'monthly')}
                 ${renderStatsCard('Yearly Summary', yearlyStats.label, yearlyStats, 'yearly')}
             </div>`);
@@ -2365,6 +2365,7 @@ export async function renderDashboard() {
         const nameEl = document.getElementById('dashboard-feast-name');
         const typeEl = document.getElementById('dashboard-feast-type');
         const imgEl = document.getElementById('dashboard-feast-img');
+        const iconEl = document.getElementById('dashboard-feast-icon');
         if (!widget || !nameEl) return;
         getTodayFeast().then(feast => {
             if (!feast || !feast.name) { widget.style.display = 'none'; return; }
@@ -2377,7 +2378,20 @@ export async function renderDashboard() {
             widget.style.background = bg;
             widget.style.borderLeftColor = color;
             widget.style.display = 'block';
-            if (imgEl) loadFeastImage(feast.name, imgEl);
+            if (iconEl) {
+                const iconMap = {
+                    'Advent': 'fa-candle-snuffer',
+                    'Christmas': 'fa-star',
+                    'Lent': 'fa-cross',
+                    'Easter': 'fa-dove',
+                    'Ordinary Time': 'fa-leaf'
+                };
+                iconEl.className = `dashboard-feast-widget-icon fas ${iconMap[season] || 'fa-calendar'}`;
+                iconEl.style.display = '';
+            }
+            if (imgEl) {
+                loadFeastImage(feast.name, imgEl, iconEl);
+            }
         }).catch(() => { widget.style.display = 'none'; });
     }, 0);
 

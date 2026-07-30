@@ -22,7 +22,7 @@ export async function renderStaffDirectoryPage() {
         : await window.AppDB.getAll('staff_messages');
 
     const others = allUsers
-        .filter(u => u.id !== currentUser.id)
+        .filter(u => u.id !== currentUser.id && !AppConfig.isDemoUser(u))
         .sort((a, b) => a.name.localeCompare(b.name));
 
     if (!window.app_staffThreadId && others.length > 0) {

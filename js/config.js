@@ -120,5 +120,11 @@ export const AppConfig = {
     DASHBOARD_CUSTOMIZATION: {
         DOC_PATH: 'settings/dashboard_customization',
         SCHEMA_VERSION: 1
+    },
+    DEMO_USER_USERNAME: 'demo',
+    isDemoUser(user) {
+        if (!user) return false;
+        const username = String(user.username || '').toLowerCase().trim();
+        return username === this.DEMO_USER_USERNAME;
     }
 };
