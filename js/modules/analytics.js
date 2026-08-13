@@ -1,5 +1,6 @@
 import { AppDB } from './db.js';
 import { AppConfig } from '../config.js';
+import { isTaskVisibleToViewer, getCurrentViewerId } from '../utils/task-visibility.js';
 
 export class Analytics {
     constructor() {
@@ -68,10 +69,16 @@ export class Analytics {
         });
     }
 
+    toLocalDateKey(date) {
+        const d = date instanceof Date ? date : new Date(date);
+        if (!d || Number.isNaN(d.getTime())) return '';
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
     async getAttendanceInRange(startDate, endDate, cacheSuffix = '') {
         const ttl = this.getTtls().attendanceSummary || 30000;
-        const startIso = typeof startDate === 'string' ? startDate : startDate.toISOString().split('T')[0];
-        const endIso = typeof endDate === 'string' ? endDate : endDate.toISOString().split('T')[0];
+        const startIso = typeof startDate === 'string' ? startDate : this.toLocalDateKey(startDate);
+        const endIso = typeof endDate === 'string' ? endDate : this.toLocalDateKey(endDate);
         const key = `analytics:attendance:${startIso}:${endIso}:${cacheSuffix}`;
         return this.memoize(key, ttl, async () => {
             if (this.db.queryMany) {
@@ -852,7 +859,8 @@ export class Analytics {
         return window.AppHeroPolicy || AppConfig?.HERO_POLICY || {};
     }
 
-    getHeroScoreRange(baseDate = null) {
+    getHeroScoreRange(baseDate = null, windowDays = 7) {
+        const width = Math.max(1, Math.round(Number(windowDays) || 7));
         const seed = baseDate instanceof Date && !Number.isNaN(baseDate.getTime())
             ? new Date(baseDate)
             : (window.AppDB?.getIstNow ? window.AppDB.getIstNow() : new Date());
@@ -860,16 +868,63 @@ export class Analytics {
         end.setDate(seed.getDate() - 1);
         end.setHours(23, 59, 59, 999);
         const start = new Date(end);
-        start.setDate(end.getDate() - 6);
+        start.setDate(end.getDate() - (width - 1));
         start.setHours(0, 0, 0, 0);
         return { start, end };
     }
 
+    buildAttendanceTaskStats(normalizedLogs = []) {
+        // Minimum work-description length (chars) for a log to count as substantive
+        // completed-planning evidence; shorter logs earn proportional partial credit.
+        const EVIDENCE_MIN_CHARS = 40;
+        const byUser = new Map();
+        (normalizedLogs || []).forEach((log) => {
+            if (!log || Number(log.activityLogDepth || 0) <= 0) return;
+            if (!byUser.has(log.userId)) {
+                byUser.set(log.userId, { planned: 0, completed: 0, inProgress: 0, missed: 0, postponed: 0 });
+            }
+            const bucket = byUser.get(log.userId);
+            bucket.planned += 1;
+            // A work log is evidence of effort, not a completed tracked task. Crediting
+            // it as fully "completed" let terse check-in notes inflate completion to 100%.
+            // Instead, credit proportionally to how substantive the description is.
+            const depth = Number(log.activityLogDepth) || 0;
+            bucket.completed += Math.min(1, depth / EVIDENCE_MIN_CHARS);
+        });
+        // Keep the fractional credit for scoring precision but round the per-user
+        // totals so the hero card/leaderboard display clean integers.
+        byUser.forEach((bucket) => {
+            bucket.completed = Math.round(bucket.completed);
+        });
+        return byUser;
+    }
+
+    mergeTaskStats(base = new Map(), extra = new Map()) {
+        // Attendance-log entries (work descriptions) are a fallback source of planning
+        // evidence. Only apply them to users who have NO work_plan-based tasks at all,
+        // so staff who track work purely via attendance can qualify instead of being locked
+        // out, without double-counting staff who already recorded work plans.
+        extra.forEach((stats, userId) => {
+            const existing = base.get(userId) || { planned: 0, completed: 0, inProgress: 0, missed: 0, postponed: 0 };
+            if ((existing.planned || 0) > 0) return;
+            if ((stats.planned || 0) <= 0) return;
+            base.set(userId, {
+                planned: existing.planned + (stats.planned || 0),
+                completed: existing.completed + (stats.completed || 0),
+                inProgress: existing.inProgress + (stats.inProgress || 0),
+                missed: existing.missed + (stats.missed || 0),
+                postponed: existing.postponed + (stats.postponed || 0)
+            });
+        });
+        return base;
+    }
+
     async getHeroSharedDataset(options = {}) {
         const policy = this.getHeroPolicy();
-        const { start, end } = this.getHeroScoreRange(options.baseDate);
-        const startIso = start.toISOString().split('T')[0];
-        const endIso = end.toISOString().split('T')[0];
+        const windowDays = Math.max(1, Number(options.windowDays ?? policy.WINDOW_DAYS ?? 7));
+        const { start, end } = this.getHeroScoreRange(options.baseDate, windowDays);
+        const startIso = this.toLocalDateKey(start);
+        const endIso = this.toLocalDateKey(end);
         const ttl = this.getTtls().attendanceSummary || 30000;
         const cacheKey = `analytics:heroShared:${startIso}:${endIso}`;
         return this.memoize(cacheKey, ttl, async () => {
@@ -901,7 +956,7 @@ export class Analytics {
                 end,
                 startIso,
                 endIso,
-                windowDays: Math.max(1, Number(policy.WINDOW_DAYS || 7)),
+                windowDays,
                 logs,
                 workPlans,
                 activityRows,
@@ -1000,7 +1055,7 @@ export class Analytics {
                 return {
                     userId,
                     logDate,
-                    dateKey: logDate.toISOString().split('T')[0],
+                    dateKey: this.toLocalDateKey(logDate),
                     durationMs,
                     activityLogDepth: String(log?.workDescription || '').length,
                     activityScore: Number.isFinite(activityScore) ? activityScore : null
@@ -1116,9 +1171,14 @@ export class Analytics {
         return rows;
     }
 
-    normalizeHeroTasksFromActivities(activityRows = []) {
+    normalizeHeroTasksFromActivities(activityRows = [], users = []) {
         const rawRows = [];
         const shadowedSourceKeys = new Set();
+        const knownUserIds = new Set(
+            (Array.isArray(users) ? users : [])
+                .map((u) => String(u?.id || '').trim())
+                .filter(Boolean)
+        );
 
         (Array.isArray(activityRows) ? activityRows : []).forEach((row) => {
             if (!row || String(row.type || '').toLowerCase() !== 'work') return;
@@ -1136,8 +1196,17 @@ export class Analytics {
                 shadowedSourceKeys.add(`${sourcePlanId}::${sourceTaskIndex}`);
             }
 
+            // Option B: tasks assigned to another known staff member are attributed to the
+            // assignee; anything else stays with the plan owner. Unknown/stale assignee ids
+            // (including 'annual_shared') fall back to the owner so no task becomes orphaned.
+            const rawAssignedTo = String(row.assignedTo || '').trim();
+            const attributionUserId = (rawAssignedTo && knownUserIds.has(rawAssignedTo))
+                ? rawAssignedTo
+                : userId;
+
             rawRows.push({
                 userId,
+                attributionUserId,
                 status: this.classifyHeroTaskStatus(row.status, row.date),
                 date: String(row.date || ''),
                 planId,
@@ -1149,6 +1218,8 @@ export class Analytics {
                 completedDate: row.completedDate || null,
                 assignedTo: String(row.assignedTo || row.userId || '').trim(),
                 assignedToName: String(row.assignedToName || row.staffName || '').trim(),
+                ownerId: userId,
+                ownerName: String(row.staffName || row.userName || '').trim(),
                 sourcePlanId,
                 sourceTaskIndex: Number.isInteger(sourceTaskIndex) ? sourceTaskIndex : null,
                 carryForwardRootId: String(row.carryForwardRootId || '').trim(),
@@ -1168,13 +1239,13 @@ export class Analytics {
         const completedTasksByUserAndName = new Set();
         filteredRows.forEach((row) => {
             if (row.status === 'completed') {
-                completedTasksByUserAndName.add(`${row.userId}::${row.task.toLowerCase().trim()}`);
+                completedTasksByUserAndName.add(`${row.attributionUserId}::${row.task.toLowerCase().trim()}`);
             }
         });
 
         return filteredRows.filter((row) => {
             if (row.status === 'postponed') {
-                const key = `${row.userId}::${row.task.toLowerCase().trim()}`;
+                const key = `${row.attributionUserId}::${row.task.toLowerCase().trim()}`;
                 if (completedTasksByUserAndName.has(key)) {
                     return false;
                 }
@@ -1198,13 +1269,14 @@ export class Analytics {
         };
 
         taskRows.forEach((row) => {
-            if (!row?.userId) return;
-            const bucket = ensureBucket(String(row.userId));
+            const userKey = String(row.attributionUserId || row.userId || '');
+            if (!userKey) return;
+            const bucket = ensureBucket(userKey);
             const key = ['completed', 'in_progress', 'postponed', 'missed'].includes(row.status)
                 ? row.status
                 : 'in_progress';
             bucket[key].push({
-                userId: String(row.userId),
+                userId: userKey,
                 planId: String(row.planId || ''),
                 taskIndex: Number(row.taskIndex),
                 date: String(row.date || ''),
@@ -1214,7 +1286,9 @@ export class Analytics {
                 rawStatus: String(row.rawStatus || ''),
                 completedDate: row.completedDate || null,
                 assignedTo: String(row.assignedTo || ''),
-                assignedToName: String(row.assignedToName || '')
+                assignedToName: String(row.assignedToName || ''),
+                ownerId: String(row.ownerId || row.userId || ''),
+                ownerName: String(row.ownerName || '')
             });
         });
 
@@ -1224,10 +1298,12 @@ export class Analytics {
     buildHeroTaskStats(taskRows = []) {
         const byUser = new Map();
         taskRows.forEach((row) => {
-            if (!byUser.has(row.userId)) {
-                byUser.set(row.userId, { planned: 0, completed: 0, inProgress: 0, missed: 0, postponed: 0 });
+            const userKey = String(row.attributionUserId || row.userId || '');
+            if (!userKey) return;
+            if (!byUser.has(userKey)) {
+                byUser.set(userKey, { planned: 0, completed: 0, inProgress: 0, missed: 0, postponed: 0 });
             }
-            const bucket = byUser.get(row.userId);
+            const bucket = byUser.get(userKey);
             bucket.planned += 1;
             if (row.status === 'completed') bucket.completed += 1;
             else if (row.status === 'postponed') bucket.postponed += 1;
@@ -1251,6 +1327,8 @@ export class Analytics {
         const wPostponedPenalty = Number(weights.postponedPenalty ?? 0.02);
         const wPlanningBreadth = Number(weights.planningBreadth ?? 0.15);
         const expectedWeeklyTasks = Math.max(1, Number(policy.EXPECTED_WEEKLY_TASKS || 5));
+        const qualityChars = Math.max(1, Number(caps.qualityChars ?? 500));
+        const defaultActivityScore = Math.min(100, Math.max(0, Number(policy.DEFAULT_ACTIVITY_SCORE ?? 70)));
 
         const modifierBase = Number(attendanceModifier.base ?? 0.9);
         const modifierMaxBonus = Number(attendanceModifier.maxBonus ?? 0.15);
@@ -1282,9 +1360,14 @@ export class Analytics {
             const planningScore = Math.max(0, Math.min(100, (planned / maxPlannedTasks) * 100));
 
             const absoluteVolumeScore = Math.min(completed / expectedWeeklyTasks, 1) * 100;
+            // Work-log depth (activityLogDepth) rewards detailed daily work descriptions.
+            // It is blended into execution quality and capped by CAPS.qualityChars; staff whose
+            // detail exceeds the cap receive the DEFAULT_ACTIVITY_SCORE baseline.
+            const depthBonus = Math.min(1, (Number(attendance.activityLogDepth) || 0) / qualityChars);
+            const workLogQuality = Math.round(depthBonus * defaultActivityScore);
             const executionQualityScore = planned > 0
                 ? Math.max(0, Math.min(100, ((completed + (inProgress * 0.3)) / planned) * 100))
-                : 0;
+                : workLogQuality;
             const missPenaltyScore = planned > 0
                 ? Math.max(0, Math.min(100, (missed / planned) * 100))
                 : 0;
@@ -1292,7 +1375,7 @@ export class Analytics {
                 ? Math.max(0, Math.min(100, (postponed / planned) * 100))
                 : 0;
 
-            const consistencyScore = (days / windowDays) * 100;
+            const consistencyScore = Math.min(100, (days / windowDays) * 100);
             const effortScore = Math.min((hoursValue / hourCap) * 100, 100);
 
             const taskScore = (completionRate * wCompletionRate)
@@ -1322,6 +1405,7 @@ export class Analytics {
                 taskPlanningScore: Number(planningScore.toFixed(1)),
                 completionRate: Number(completionRate.toFixed(1)),
                 absoluteVolumeScore: Number(absoluteVolumeScore.toFixed(1)),
+                workLogQuality: Number(workLogQuality),
                 taskScore: Number(Math.max(0, taskScore).toFixed(2)),
                 attendanceFactor: Number(attendanceFactor.toFixed(3)),
                 finalScore: Number(Math.max(0, finalScore).toFixed(2))
@@ -1349,126 +1433,69 @@ export class Analytics {
         };
     }
 
-    scoreHeroFromLogs(logs = [], users = [], options = {}) {
-        const period = String(options.period || 'weekly');
-        const source = String(options.source || 'direct_cache');
+    computeHeroConfidence(stats, policy = {}) {
+        const expectedWeeklyTasks = Math.max(1, Number(policy.EXPECTED_WEEKLY_TASKS || 5));
+        const confidenceTasks = Math.min(1, Number(stats?.taskCompleted || 0) / expectedWeeklyTasks);
+        const confidenceDays = Math.min(1, Number(stats?.days || 0) / Math.max(1, Number(policy.WINDOW_DAYS || 7)));
+        const confidenceHours = Math.min(1, Number(stats?.totalDurationMs || 0) / (1000 * 60 * 60 * Math.max(1, Number(policy?.CAPS?.hours || 40))));
+        return Number(((confidenceTasks + confidenceDays + confidenceHours) / 3).toFixed(2));
+    }
+
+    buildDatedHeroPayload(winningStats, dataset, { primaryWindow, source, policy }) {
+        const winner = (Array.isArray(dataset?.users) ? dataset.users : []).find(u => String(u?.id) === String(winningStats?.userId || ''));
+        if (!winner) {
+            return this.createNoHeroPayload({ reason: 'No valid user mapping found for hero candidates.', period: 'yesterday_back_7_days', source });
+        }
+        return {
+            state: 'winner',
+            user: winner,
+            stats: winningStats,
+            reason: this.determineHeroReason(winningStats),
+            period: 'yesterday_back_7_days',
+            source,
+            confidence: this.computeHeroConfidence(winningStats, policy),
+            schemaVersion: Number(policy.SCHEMA_VERSION || 1),
+            meta: {
+                startDate: this.toLocalDateKey(dataset?.start),
+                endDate: this.toLocalDateKey(dataset?.end),
+                windowDays: dataset?.windowDays || primaryWindow,
+                usedFallbackWindow: Number(dataset?.windowDays || primaryWindow) > primaryWindow
+            }
+        };
+    }
+
+    /**
+     * Single source of truth for the weekly hero. Builds the ranked/eligibility board for the
+     * effective window (primary, widened to FALLBACK_LOOKBACK_DAYS when nobody is eligible) and
+     * returns both the full rows and the winning (top eligible) row. Both getHeroLeaderboard and
+     * getHeroOfTheWeek consume this so the mini card and the audit table always agree.
+     */
+    async buildHeroRanking(options = {}) {
         const policy = this.getHeroPolicy();
+        const source = String(options.source || 'direct_cache');
+        const primaryWindow = Math.max(1, Number(options.windowDays ?? policy.WINDOW_DAYS ?? 7));
+        const fallbackWindow = Math.max(primaryWindow, Math.round(Number(policy.FALLBACK_LOOKBACK_DAYS ?? primaryWindow)));
         const minEvidence = policy.MIN_EVIDENCE || {};
         const minDays = Math.max(1, Number(minEvidence.minDays || 1));
         const minDurationMs = Math.max(0, Number(minEvidence.minDurationMs || 1));
         const minPlannedTasks = Math.max(0, Number(minEvidence.minPlannedTasks || 1));
 
-        const normalized = this.normalizeHeroLogs(logs);
-        const normalizedTasks = Array.isArray(options.activityRows) && options.activityRows.length
-            ? this.normalizeHeroTasksFromActivities(options.activityRows)
-            : this.normalizeHeroTasks(Array.isArray(options.workPlans) ? options.workPlans : []);
-        if (normalized.length === 0 && normalizedTasks.length === 0) {
-            return this.createNoHeroPayload({ period, source });
-        }
-
-        const ranked = this.rankHeroCandidates(
-            this.buildHeroCandidateStats(normalized),
-            this.buildHeroTaskStats(normalizedTasks),
-            policy
-        );
-        const eligible = ranked.filter((row) =>
-            row.taskPlanned >= minPlannedTasks &&
-            row.days >= minDays &&
-            row.totalDurationMs >= minDurationMs
-        );
-        if (eligible.length === 0) {
-            return this.createNoHeroPayload({ reason: 'No staff met the minimum hero criteria this period.', period, source });
-        }
-
-        const winnerStats = eligible[0];
-        const winner = (users || []).find(u => String(u.id) === String(winnerStats.userId));
-        if (!winner) {
-            return this.createNoHeroPayload({ reason: 'No valid user mapping found for hero candidates.', period, source });
-        }
-
-        const expectedWeeklyTasks = Math.max(1, Number(policy.EXPECTED_WEEKLY_TASKS || 5));
-        const confidenceTasks = Math.min(1, winnerStats.taskCompleted / expectedWeeklyTasks);
-        const confidenceDays = Math.min(1, winnerStats.days / Math.max(1, Number(policy.WINDOW_DAYS || 7)));
-        const confidenceHours = Math.min(1, winnerStats.totalDurationMs / (1000 * 60 * 60 * Math.max(1, Number(policy?.CAPS?.hours || 40))));
-        const confidence = Number(((confidenceTasks + confidenceDays + confidenceHours) / 3).toFixed(2));
-
-        return {
-            state: 'winner',
-            user: winner,
-            stats: winnerStats,
-            reason: this.determineHeroReason(winnerStats),
-            period,
-            source,
-            confidence,
-            schemaVersion: Number(policy.SCHEMA_VERSION || 1)
-        };
-    }
-
-    async getHeroOfTheWeek(options = {}) {
-        try {
-            const { policy, start, end, windowDays, logs, activityRows, users } = await this.getHeroSharedDataset(options);
-
-            const weeklyHero = this.scoreHeroFromLogs(logs, users, {
-                period: 'yesterday_back_7_days',
-                source: String(options.source || 'direct_cache'),
-                activityRows
-            });
-            if (weeklyHero.state === 'winner') {
-                return {
-                    ...weeklyHero,
-                    meta: {
-                        startDate: start.toISOString().split('T')[0],
-                        endDate: end.toISOString().split('T')[0],
-                        windowDays
-                    }
-                };
-            }
-
-            return {
-                ...weeklyHero,
-                period: 'yesterday_back_7_days',
-                source: String(options.source || 'direct_cache'),
-                reason: weeklyHero.reason || 'No staff met the minimum hero criteria in the last 7 completed days.',
-                schemaVersion: Number(policy.SCHEMA_VERSION || 1),
-                meta: {
-                    windowDays,
-                    startDate: start.toISOString().split('T')[0],
-                    endDate: end.toISOString().split('T')[0]
-                }
-            };
-        } catch (err) {
-            console.error('Hero Calculation Error:', err);
-            return {
-                state: 'fetch_error',
-                user: null,
-                stats: null,
-                reason: 'Unable to calculate hero right now.',
-                period: 'weekly',
-                source: String(options.source || 'direct_cache'),
-                confidence: 0,
-                schemaVersion: Number(this.getHeroPolicy()?.SCHEMA_VERSION || 1)
-            };
-        }
-    }
-
-    async getHeroLeaderboard(options = {}) {
-        try {
-            const { policy, start, end, logs, activityRows, users } = await this.getHeroSharedDataset(options);
-            const minEvidence = policy.MIN_EVIDENCE || {};
-            const minDays = Math.max(1, Number(minEvidence.minDays || 1));
-            const minDurationMs = Math.max(0, Number(minEvidence.minDurationMs || 1));
-            const minPlannedTasks = Math.max(0, Number(minEvidence.minPlannedTasks || 1));
-
-            const normalizedLogs = this.normalizeHeroLogs(logs);
-            const normalizedTasks = this.normalizeHeroTasksFromActivities(activityRows);
+        const rankWindow = async (windowDays) => {
+            const dataset = await this.getHeroSharedDataset({ ...options, windowDays });
+            const normalizedLogs = this.normalizeHeroLogs(dataset.logs);
+            const normalizedTasks = this.normalizeHeroTasksFromActivities(dataset.activityRows, dataset.users);
+            const taskStats = this.mergeTaskStats(
+                this.buildHeroTaskStats(normalizedTasks),
+                this.buildAttendanceTaskStats(normalizedLogs)
+            );
             const ranked = this.rankHeroCandidates(
                 this.buildHeroCandidateStats(normalizedLogs),
-                this.buildHeroTaskStats(normalizedTasks),
+                taskStats,
                 policy
             );
             const taskBuckets = this.buildHeroTaskBuckets(normalizedTasks);
             const rankedMap = new Map(ranked.map((row, index) => [String(row.userId), { ...row, rank: index + 1 }]));
-            const rows = (Array.isArray(users) ? users : []).map((user) => {
+            const rows = (Array.isArray(dataset.users) ? dataset.users : []).map((user) => {
                 const userId = String(user?.id || '').trim();
                 const stats = rankedMap.get(userId) || { ...this.createZeroHeroStats(userId), rank: null };
                 const isEligible = stats.taskPlanned >= minPlannedTasks
@@ -1496,17 +1523,85 @@ export class Analytics {
                 if (aRank !== bRank) return aRank - bRank;
                 return String(a.user?.name || '').localeCompare(String(b.user?.name || ''));
             });
+            const winner = rows.find((row) => row.isEligible) || null;
+            return { dataset, rows, winner };
+        };
 
+        let result = await rankWindow(primaryWindow);
+        if (!result.winner && fallbackWindow > primaryWindow) {
+            const fallbackResult = await rankWindow(fallbackWindow);
+            if (fallbackResult.winner) {
+                result = fallbackResult;
+            }
+        }
+
+        return {
+            policy,
+            source,
+            primaryWindow,
+            dataset: result.dataset,
+            rows: result.rows,
+            winnerRow: result.winner,
+            usedFallbackWindow: Number(result.dataset?.windowDays || primaryWindow) > primaryWindow
+        };
+    }
+
+    async getHeroOfTheWeek(options = {}) {
+        try {
+            const ranking = await this.buildHeroRanking(options);
+            if (!ranking.winnerRow) {
+                return {
+                    ...this.createNoHeroPayload({
+                        reason: 'No staff met the minimum hero criteria in the current window.',
+                        period: 'yesterday_back_7_days',
+                        source: ranking.source
+                    }),
+                    period: 'yesterday_back_7_days',
+                    source: ranking.source,
+                    schemaVersion: Number(ranking.policy.SCHEMA_VERSION || 1),
+                    meta: {
+                        windowDays: ranking.dataset?.windowDays || ranking.primaryWindow,
+                        usedFallbackWindow: ranking.usedFallbackWindow,
+                        startDate: this.toLocalDateKey(ranking.dataset?.start),
+                        endDate: this.toLocalDateKey(ranking.dataset?.end)
+                    }
+                };
+            }
+            return this.buildDatedHeroPayload(ranking.winnerRow.stats, ranking.dataset, {
+                primaryWindow: ranking.primaryWindow,
+                source: ranking.source,
+                policy: ranking.policy
+            });
+        } catch (err) {
+            console.error('Hero Calculation Error:', err);
+            return {
+                state: 'fetch_error',
+                user: null,
+                stats: null,
+                reason: 'Unable to calculate hero right now.',
+                period: 'weekly',
+                source: String(options.source || 'direct_cache'),
+                confidence: 0,
+                schemaVersion: Number(this.getHeroPolicy()?.SCHEMA_VERSION || 1)
+            };
+        }
+    }
+
+    async getHeroLeaderboard(options = {}) {
+        try {
+            const ranking = await this.buildHeroRanking(options);
             return {
                 state: 'ok',
                 period: 'yesterday_back_7_days',
-                source: String(options.source || 'direct_cache'),
-                rows,
-                winnerUserId: rows.find((row) => row.isEligible && Number(row.rank) === 1)?.user?.id || null,
+                source: ranking.source,
+                rows: ranking.rows,
+                winnerUserId: ranking.winnerRow?.user?.id || null,
                 meta: {
-                    startDate: start.toISOString().split('T')[0],
-                    endDate: end.toISOString().split('T')[0],
-                    schemaVersion: Number(policy.SCHEMA_VERSION || 1)
+                    startDate: this.toLocalDateKey(ranking.dataset?.start),
+                    endDate: this.toLocalDateKey(ranking.dataset?.end),
+                    usedFallbackWindow: ranking.usedFallbackWindow,
+                    windowDays: ranking.dataset?.windowDays || ranking.primaryWindow,
+                    schemaVersion: Number(ranking.policy.SCHEMA_VERSION || 1)
                 }
             };
         } catch (err) {
@@ -1857,6 +1952,7 @@ export class Analytics {
             }
 
             // Process Work Plans
+            const staffActViewerId = getCurrentViewerId();
             workPlans.forEach(wp => {
                 const wpDateKey = normalizeDateInput(wp.date);
                 if (wpDateKey && wpDateKey >= startIso && wpDateKey <= endIso && wp.plans) {
@@ -1865,6 +1961,8 @@ export class Analytics {
 
                     wp.plans.forEach((plan, idx) => {
                         if (plan?.isRemoved === true) return;
+                        // Private tasks are visible only to the plan owner or the assignee.
+                        if (plan?.isPrivate === true && !isTaskVisibleToViewer(plan, String(wp.userId || ''), staffActViewerId)) return;
                         const isOldCarryForwardTask = (() => {
                             const normalizedStatus = String(plan?.status || '').trim().toLowerCase();
                             const isClosed = normalizedStatus === 'completed'

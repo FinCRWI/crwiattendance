@@ -3268,19 +3268,21 @@ textarea:focus {
     flex: 0.9;
 }
 
+/* ── Worklog / Planned Tasks Card ────────────────────────── */
 .dashboard-worklog-card {
     padding: 0.85rem;
     display: flex;
     flex-direction: column;
-    height: auto;
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     min-height: 0;
+    overflow: hidden;
 }
 
 .dashboard-worklog-head {
     margin-bottom: 0.4rem;
     border-bottom: 1px solid #eef2f7;
     padding-bottom: 0.3rem;
+    flex-shrink: 0;
 }
 
 .dashboard-worklog-head h4 {
@@ -3289,61 +3291,10 @@ textarea:focus {
     color: #1f2937;
 }
 
-.dashboard-worklog-head span {
-    font-size: 0.7rem;
-    color: #64748b;
-}
-
 .dashboard-worklog-staff {
     font-size: 0.75rem;
     color: var(--accent);
     font-weight: 800;
-}
-
-.dashboard-worklog-filter-row {
-    display: flex;
-    gap: 0.4rem;
-    margin-bottom: 0.75rem;
-    align-items: center;
-}
-
-.dashboard-worklog-date-input {
-    border: 1px solid #e2e8f0;
-    border-radius: 6px;
-    padding: 0.2rem 0.3rem;
-    font-size: 0.75rem;
-    width: 104px;
-}
-
-.dashboard-worklog-to {
-    color: #94a3b8;
-    font-size: 0.75rem;
-}
-
-.dashboard-worklog-go-btn {
-    background: var(--primary);
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    padding: 0.22rem 0.5rem;
-    font-size: 0.75rem;
-    cursor: pointer;
-    font-weight: 700;
-}
-
-.dashboard-worklog-list {
-    flex: 1;
-    overflow-y: auto;
-    min-height: 0;
-    font-size: 0.75rem;
-    padding-right: 5px;
-    padding-bottom: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-    scrollbar-gutter: stable;
-    overscroll-behavior: contain;
-    max-height: clamp(195px, 28vh, 240px);
 }
 
 .dashboard-planned-task-head {
@@ -3363,17 +3314,9 @@ textarea:focus {
     margin: 0;
 }
 
-.dashboard-planned-task-summary {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 0.22rem;
-}
-
 .dashboard-planned-task-chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.2rem;
     padding: 0.1rem 0.38rem;
     border-radius: 999px;
     border: 1px solid #dbe4ef;
@@ -3383,16 +3326,6 @@ textarea:focus {
     font-weight: 700;
     line-height: 1.08;
     white-space: nowrap;
-}
-
-.dashboard-planned-task-chip strong {
-    font-weight: 800;
-}
-
-.dashboard-planned-task-chip.is-complete {
-    background: #ecfdf3;
-    border-color: #bbf7d0;
-    color: #166534;
 }
 
 .dashboard-planned-task-list {
@@ -3405,7 +3338,6 @@ textarea:focus {
     gap: 0.24rem;
     scrollbar-gutter: stable;
     overscroll-behavior: contain;
-    max-height: clamp(170px, 24vh, 220px);
 }
 
 .dashboard-planned-task-list.dashboard-planned-task-list-section {
@@ -3421,11 +3353,13 @@ textarea:focus {
     border-left: 3px solid #dbeafe;
     border-radius: 0 10px 10px 0;
     background: #ffffff;
+    cursor: pointer;
+    transition: box-shadow 0.15s;
 }
 
-.dashboard-planned-task-item.completed {
-    border-left-color: #86efac;
-    background: #f8fdf9;
+.dashboard-planned-task-item.in-process {
+    border-left-color: #60a5fa;
+    background: #f8fbff;
 }
 
 .dashboard-planned-task-item.overdue {
@@ -3433,16 +3367,14 @@ textarea:focus {
     background: #fffbf3;
 }
 
-.dashboard-planned-task-item.not-completed,
-.dashboard-planned-task-item.cancelled,
-.dashboard-planned-task-item.canceled {
-    border-left-color: #f97316;
-    background: #fff8f1;
+.dashboard-planned-task-item.to-be-started {
+    border-left-color: #dbeafe;
+    background: #ffffff;
 }
 
-.dashboard-planned-task-item.in-process {
-    border-left-color: #60a5fa;
-    background: #f8fbff;
+.dashboard-planned-task-item.postponed {
+    border-left-color: #a78bfa;
+    background: #faf5ff;
 }
 
 .dashboard-planned-task-main {
@@ -3486,7 +3418,7 @@ textarea:focus {
     visibility: hidden;
     pointer-events: none;
     transform: translateY(-4px);
-    transition: opacity var(--motion-fast) var(--easing-standard), transform var(--motion-fast) var(--easing-standard), visibility var(--motion-fast) var(--easing-standard);
+    transition: opacity 0.15s, transform 0.15s, visibility 0.15s;
     z-index: 2;
 }
 
@@ -6259,28 +6191,28 @@ textarea:focus {
 }
 
 .dashboard-staff-view {
-    --dashboard-primary-equal-card-h: clamp(240px, 30vh, 290px);
+    --dashboard-primary-equal-card-h: clamp(220px, 26vh, 255px);
 }
 
 .dashboard-admin-view {
-    --dashboard-primary-equal-card-h: clamp(240px, 30vh, 290px);
+    --dashboard-primary-equal-card-h: clamp(220px, 26vh, 255px);
 }
 
 @media (max-width: 1024px) {
     .dashboard-staff-view {
-        --dashboard-primary-equal-card-h: clamp(220px, 28vh, 270px);
+        --dashboard-primary-equal-card-h: clamp(200px, 25vh, 240px);
     }
     .dashboard-admin-view {
-        --dashboard-primary-equal-card-h: clamp(220px, 28vh, 270px);
+        --dashboard-primary-equal-card-h: clamp(200px, 25vh, 240px);
     }
 }
 
 @media (max-width: 768px) {
     .dashboard-staff-view {
-        --dashboard-primary-equal-card-h: 280px;
+        --dashboard-primary-equal-card-h: 250px;
     }
     .dashboard-admin-view {
-        --dashboard-primary-equal-card-h: 280px;
+        --dashboard-primary-equal-card-h: 250px;
     }
     .staff-ai-memory-hero {
         padding: 1rem;
@@ -6300,10 +6232,8 @@ textarea:focus {
     display: flex;
 }
 
-.dashboard-staff-view .dashboard-primary-row > .dashboard-primary-col > .dashboard-worklog-card,
 .dashboard-staff-view .dashboard-primary-row > .dashboard-primary-col > .dashboard-team-schedule-card,
 .dashboard-staff-view .dashboard-primary-row > .dashboard-primary-col > .dashboard-team-activity-card,
-.dashboard-admin-view .dashboard-primary-row > .dashboard-primary-col > .dashboard-worklog-card,
 .dashboard-admin-view .dashboard-primary-row > .dashboard-primary-col > .dashboard-team-schedule-card,
 .dashboard-admin-view .dashboard-primary-row > .dashboard-primary-col > .dashboard-team-activity-card {
     width: 100%;
@@ -6312,31 +6242,13 @@ textarea:focus {
     overflow: visible;
 }
 
-.dashboard-staff-view .dashboard-worklog-card.dashboard-card-mode-tile,
 .dashboard-staff-view .dashboard-team-schedule-card.dashboard-card-mode-tile,
 .dashboard-staff-view .dashboard-team-activity-card.dashboard-card-mode-tile,
-.dashboard-admin-view .dashboard-worklog-card.dashboard-card-mode-tile,
 .dashboard-admin-view .dashboard-team-schedule-card.dashboard-card-mode-tile,
 .dashboard-admin-view .dashboard-team-activity-card.dashboard-card-mode-tile {
     min-height: var(--dashboard-primary-equal-card-h);
     height: auto;
     overflow: visible;
-}
-
-.dashboard-staff-view .dashboard-worklog-card.dashboard-card-mode-tile .dashboard-worklog-list {
-    flex: 1 1 auto;
-    height: auto;
-    max-height: none;
-    min-height: 0;
-    overflow-y: auto;
-}
-
-.dashboard-staff-view .dashboard-primary-row > .dashboard-primary-col > .dashboard-worklog-card .dashboard-worklog-list,
-.dashboard-admin-view .dashboard-primary-row > .dashboard-primary-col > .dashboard-worklog-card .dashboard-worklog-list {
-    flex: 1 1 auto;
-    min-height: 0;
-    max-height: none;
-    overflow-y: auto;
 }
 
 .dashboard-staff-view .dashboard-team-schedule-card.dashboard-card-mode-tile {

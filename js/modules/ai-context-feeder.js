@@ -1,4 +1,5 @@
 import { AppDB } from './db.js';
+import { isTaskVisibleToViewer } from '../utils/task-visibility.js';
 
 const CONTEXT_COLLECTION = 'ai_staff_context';
 const REBUILD_DEBOUNCE_MS = 1200;
@@ -190,7 +191,9 @@ async function rebuildStaffContext(userId, _options = {}) {
     relevantPlans.forEach((plan) => {
         const planOwner = allUsers.find((u) => String(u.id || '').trim() === String(plan.userId || '').trim()) || null;
         const ownerName = getUserLabel(planOwner, plan.userName || plan.userId || '');
-        const visibleTasks = Array.isArray(plan.plans) ? plan.plans.filter((task) => task && task.isRemoved !== true) : [];
+        const visibleTasks = Array.isArray(plan.plans)
+            ? plan.plans.filter((task) => task && task.isRemoved !== true && isTaskVisibleToViewer(task, String(plan.userId || ''), safeUserId))
+            : [];
         visibleTasks.forEach((task) => {
             const assignedTo = String(task.assignedTo || '').trim();
             if (assignedTo && assignedTo !== safeUserId) {

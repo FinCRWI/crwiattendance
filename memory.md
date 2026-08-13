@@ -122,6 +122,8 @@ All three must be satisfied:
 
 Carry-forward and calendar aggregation helpers now return empty results on query failure instead of falling back to full `work_plans` collection reads.
 
+**Day-plan open/prefetch path**: fetches by known doc ids only via `AppDB.getDayPlansByIds(date, userIds)` — `plan_annual_{date}` plus `plan_{userId}_{date}` per user from the cached users list (IN-queries in chunks of 10 via `getManyByIds`). No date-scoped `work_plans` collection query runs on this path; `getDayPlansByDate` is retained as an error-only fallback. Coverage: `tests/unit/day-plan-doc-ids.test.mjs`.
+
 Schema version bump → stale cache keys stop matching → automatic recalculation.
 
 ---

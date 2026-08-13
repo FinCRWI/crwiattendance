@@ -714,6 +714,27 @@ export class Database {
         ]);
         return plans.filter((plan) => String(plan?.date || '').trim() === safeDate);
     }
+
+    /**
+     * Fetch the day-plan docs for a date by their known doc ids instead of a
+     * date-scoped collection query: the annual shared plan (plan_annual_{date})
+     * plus one personal plan (plan_{userId}_{date}) per supplied user id.
+     * The annual doc is always included; 'annual_shared' ids are skipped.
+     * Uses getManyByIds (IN queries in chunks of 10 with a per-doc fallback),
+     * so no full work_plans collection read ever happens on this path.
+     */
+    async getDayPlansByIds(dateKey, userIds = []) {
+        const safeDate = String(dateKey || '').trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(safeDate)) return [];
+        const ids = new Set([`plan_annual_${safeDate}`]);
+        (Array.isArray(userIds) ? userIds : []).forEach((uid) => {
+            const safeUid = String(uid || '').trim();
+            if (!safeUid || safeUid === 'annual_shared') return;
+            ids.add(`plan_${safeUid}_${safeDate}`);
+        });
+        if (ids.size === 0) return [];
+        return this.getManyByIds('work_plans', Array.from(ids));
+    }
     async queryMany(collectionName, filters = [], options = {}) {
         const flags = this.getFlags();
         if (!flags.FF_READ_OPT_DB_QUERIES) return this.getAll(collectionName, { ...options, silentPermissionDenied: true });

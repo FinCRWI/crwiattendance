@@ -580,6 +580,40 @@
     background: var(--day-plan-highlight);
 }
 
+/* ===== PRIVATE TASK TOGGLE ===== */
+.day-plan-private-toggle {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    border: 1px solid rgba(226, 234, 245, 0.95);
+    background: #fff;
+    color: var(--day-plan-muted);
+    font-size: 0.65rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+
+.day-plan-private-toggle:hover {
+    color: var(--day-plan-primary);
+    border-color: rgba(191, 219, 254, 0.95);
+    background: var(--day-plan-highlight);
+}
+
+.day-plan-private-toggle.is-private {
+    color: #b45309;
+    border-color: rgba(245, 158, 11, 0.45);
+    background: rgba(245, 158, 11, 0.1);
+}
+
+.plan-block-private {
+    border-color: rgba(245, 158, 11, 0.4);
+    box-shadow: inset 3px 0 0 rgba(245, 158, 11, 0.55);
+}
+
 /* ===== PLAN BLOCK BODY ===== */
 .plan-block-body {
     display: flex;

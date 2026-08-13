@@ -137,7 +137,7 @@
   grid-template-columns: 1fr;
   gap: 1.25rem;
   margin-top: 0.25rem;
-  align-items: start;
+  align-items: stretch;
 }
 
 @media (min-width: 1024px) {
@@ -184,6 +184,20 @@
   position: relative;
   overflow: hidden;
   margin-bottom: 0.4rem;
+}
+
+/* Hero card must grow to its content height so the "Your Rating" chip row (and
+   the % Complete chip) stays fully inside the card. The staff/admin compact rule
+   in main.css caps height at 72-82px with !important, which clips the chips;
+   these overrides (same !important weight, higher specificity) lift the cap. */
+.modern-dashboard.dashboard-staff-view .dashboard-hero-card,
+.modern-dashboard.dashboard-admin-view .dashboard-hero-card {
+  height: auto !important;
+  block-size: auto !important;
+  min-height: clamp(84px, 5.4vw, 100px) !important;
+  min-block-size: clamp(84px, 5.4vw, 100px) !important;
+  max-height: none !important;
+  max-block-size: none !important;
 }
 
 .modern-dashboard .dashboard-hero-card::before {
@@ -511,13 +525,26 @@
 }
 
 .modern-dashboard .dashboard-primary-col > .card {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
-.modern-dashboard .dashboard-primary-col > .card > *:last-child {
-  margin-top: auto;
+/* Check-in card (direct grid child, tile mode): stretch to match the Team
+   Schedule / Planned Tasks cards instead of keeping content height. Overrides
+   main.css `.dashboard-primary-row > .card.dashboard-card-mode-tile` which
+   sets `align-self: start`. */
+.modern-dashboard .dashboard-primary-row > .dashboard-checkin-card.dashboard-card-mode-tile {
+  align-self: stretch;
+  min-height: 0;
+}
+
+/* Planned Tasks list: cap the height so a very long list scrolls inside the
+   card instead of forcing the whole primary row to grow unboundedly. The card
+   still stretches to match the Team Schedule card for short lists. */
+.modern-dashboard .dashboard-worklog-card .dashboard-planned-task-list {
+  max-height: min(52vh, 460px);
 }
 
 .modern-dashboard .dashboard-primary-col-highlight {
@@ -770,84 +797,18 @@
 .modern-dashboard .dashboard-worklog-card {
   background: #faf5ff;
   border: 1px solid rgba(192, 132, 252, 0.15);
-  display: flex;
-  flex-direction: column;
-  height: 100%;
 }
 
-.modern-dashboard .dashboard-worklog-card .dashboard-worklog-head {
+.modern-dashboard .dashboard-worklog-head {
   margin-bottom: 0.25rem;
   padding-bottom: 0.25rem;
   border-bottom: 1px solid rgba(226, 232, 240, 0.4);
-  flex-shrink: 0;
 }
 
-.modern-dashboard .dashboard-worklog-card .dashboard-worklog-head h4 {
+.modern-dashboard .dashboard-worklog-head h4 {
   font-size: 0.8rem;
   font-weight: 700;
   color: var(--md-primary);
-  margin: 0;
-}
-
-.modern-dashboard .dashboard-plan-task-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  flex: 1;
-}
-
-.modern-dashboard .dashboard-planned-task-item {
-  background: var(--md-surface-container-low);
-  border: 1px solid transparent;
-  border-radius: var(--md-radius-sm);
-  padding: 0.5rem 0.65rem;
-  transition: all 0.15s;
-  cursor: pointer;
-}
-
-.modern-dashboard .dashboard-planned-task-item:hover {
-  border-color: var(--md-outline-variant);
-  background: var(--md-surface-white);
-}
-
-.modern-dashboard .dashboard-planned-task-item .dashboard-planned-task-title {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--md-on-surface);
-  margin-bottom: 0.3rem;
-}
-
-.modern-dashboard .dashboard-planned-task-item .dashboard-planned-task-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-}
-
-/* ── Worklog Card — Inner elements (chips, status, head) ───── */
-.modern-dashboard .dashboard-planned-task-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.35rem;
-}
-
-.modern-dashboard .dashboard-planned-task-head-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  min-width: 0;
-}
-
-.modern-dashboard .dashboard-planned-task-head-copy h4 {
-  margin: 0;
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--md-primary);
-  line-height: 1.2;
-}
-
-.modern-dashboard .dashboard-worklog-head span {
-  color: var(--md-text-muted);
 }
 
 .modern-dashboard .dashboard-worklog-staff {
@@ -856,70 +817,61 @@
   font-weight: 700;
 }
 
-.modern-dashboard .dashboard-planned-task-head-copy span:not(.dashboard-worklog-staff) {
-  font-size: 0.65rem;
-  color: var(--md-text-muted);
-  line-height: 1.15;
+.modern-dashboard .dashboard-planned-task-item {
+  background: var(--md-surface-container-low);
+  border: 1px solid transparent;
+  border-radius: var(--md-radius-sm);
+  padding: 0.5rem 0.65rem;
+  transition: all 0.15s;
 }
 
-.modern-dashboard .dashboard-planned-task-summary {
+.modern-dashboard .dashboard-planned-task-item:hover {
+  border-color: var(--md-outline-variant);
+  background: var(--md-surface-white);
+}
+
+.modern-dashboard .dashboard-planned-task-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--md-on-surface);
+}
+
+.modern-dashboard .dashboard-planned-task-meta {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0.15rem;
-  flex-shrink: 0;
+  gap: 0.3rem;
 }
 
 .modern-dashboard .dashboard-planned-task-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-  padding: 0.1rem 0.4rem;
-  border-radius: 999px;
   background: var(--md-surface-container);
-  border: 1px solid var(--md-outline-variant);
+  border-color: var(--md-outline-variant);
   color: var(--md-on-surface);
-  font-size: 0.62rem;
-  font-weight: 700;
-  line-height: 1.08;
-  white-space: nowrap;
 }
 
-.modern-dashboard .dashboard-planned-task-chip strong {
-  font-weight: 800;
-  color: var(--md-primary);
+.modern-dashboard .dashboard-planned-task-chip-private {
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.28);
 }
 
-.modern-dashboard .dashboard-planned-task-chip.is-complete {
-  background: #ecfdf3;
-  border-color: #bbf7d0;
-  color: #166534;
+.modern-dashboard .dashboard-planned-task-chip-private i {
+  margin-right: 0.12rem;
+  font-size: 0.6rem;
 }
 
-.modern-dashboard .dashboard-planned-task-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.modern-dashboard .dashboard-planned-task-item .dashboard-planned-task-meta .status-badge {
+.modern-dashboard .dashboard-planned-task-meta .status-badge {
   font-size: 0.58rem;
   padding: 0.11rem 0.28rem;
   color: var(--md-on-surface);
 }
 
-.modern-dashboard .dashboard-planned-task-item .dashboard-planned-task-meta .status-badge i {
+.modern-dashboard .dashboard-planned-task-meta .status-badge i {
   margin-right: 0.12rem;
 }
 
-/* Empty state — minimal padding so it doesn't create gray space inside stretched cards */
 .modern-dashboard .dashboard-worklog-card .dashboard-activity-empty {
   padding: 0.35rem 0.5rem;
   font-size: 0.72rem;
-}
-
-/* Prevent the empty state from being pushed to the bottom of stretched cards */
-.modern-dashboard .dashboard-primary-col .dashboard-worklog-card > *:last-child {
-  margin-top: 0;
 }
 
 /* ── Team Schedule / Yearly Plan Card ────────────────────── */
@@ -1100,6 +1052,15 @@
   font-size: 0.65rem;
   color: #94a3b8;
   opacity: 0.7;
+}
+
+/* Hero fallback-window badge — shown when nobody qualified in the standard window
+   and the ranking was automatically widened (e.g. up to the admin-configured
+   FALLBACK_LOOKBACK_DAYS). Amber so it reads as a caveat, not a normal tag. */
+.modern-dashboard .dashboard-hero-stats-card .hero-fallback-badge {
+  color: #92400e;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
 }
 
 .modern-dashboard .dashboard-hero-stats-card .hero-label-badge {
@@ -1542,6 +1503,17 @@
 .modern-dashboard .dashboard-team-schedule-card {
   border: 1px solid rgba(226, 232, 240, 0.6);
   padding: 1.25rem;
+  overflow: hidden;
+}
+
+/* Shrink calendar cells on dashboard to match check-in card height */
+.modern-dashboard .dashboard-team-schedule-card .timesheet-cal-day {
+  min-height: 42px;
+  padding: 0.25rem;
+}
+
+.modern-dashboard .dashboard-team-schedule-card .timesheet-cal-day-head {
+  font-size: 0.65rem;
 }
 
 /* Team Schedule — Button Row (Add Plan / Edit Plan) — Global Styles */

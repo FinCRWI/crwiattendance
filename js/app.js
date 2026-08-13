@@ -4463,6 +4463,13 @@ const app_getISTNowDate = () => {
     return new Date();
 };
 
+const app_getPostponeDefaultDate = () => {
+    const istNow = app_getISTNowDate();
+    const tomorrowDate = new Date(istNow);
+    tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+    return app_toDateKey(tomorrowDate);
+};
+
 const app_toDateKey = (dateObj) => {
     const d = dateObj instanceof Date ? new Date(dateObj) : new Date(dateObj);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -4743,7 +4750,6 @@ window.app_addPlanBlockUI = async () => {
     if (!container) return;
     const allUsers = await window.AppDB.getAll('users');
     const currentUser = window.AppAuth.getUser();
-    const isAdmin = currentUser.role === 'Administrator' || currentUser.isAdmin;
     const targetId = app_resolveTargetUserId(window.app_currentDayPlanTargetId, currentUser.id);
     const defaultScope = container.dataset.defaultScope === 'annual' ? 'annual' : 'personal';
     const selectableCollaborators = allUsers.filter(u => u.id !== targetId);
@@ -4766,6 +4772,8 @@ window.app_addPlanBlockUI = async () => {
                     <span class="day-plan-scope-pill" style="background:#dbeafe; color:#1e3a8a; border-color:#bfdbfe;">${defaultScope === 'annual' ? 'Annual Plan' : 'Personal Plan'}</span>
                 </div>
                 <div class="day-plan-block-head-actions">
+                    <input type="hidden" class="plan-private" value="0">
+                    <button type="button" class="day-plan-private-toggle" onclick="window.app_togglePlanBlockPrivate(this.closest('.plan-block'))" title="Make private — only you can see this task"><i class="fa-solid fa-lock-open"></i></button>
                     <button type="button" onclick="this.closest('.plan-block').remove()" title="Remove this task" class="day-plan-remove-task-btn"><i class="fa-solid fa-times"></i></button>
                     <button type="button" class="day-plan-collapse-btn" onclick="window.app_togglePlanBlockCollapse(this)" style="border-color:#bfdbfe; background:#fff;">
                         <i class="fa-solid fa-chevron-down"></i>
@@ -4823,14 +4831,13 @@ window.app_addPlanBlockUI = async () => {
                         <option value="in-process">In Progress</option>
                     </select>
                 </div>
-                ${isAdmin ? `
-                    <div style="display:flex; align-items:center; gap:0.6rem;">
-                        <label class="day-plan-mini-label">Assign To</label>
-                        <select class="plan-assignee day-plan-select">
-                            ${allUsers.map(u => `<option value="${u.id}" ${u.id === currentUser.id ? 'selected' : ''}>${u.name}</option>`).join('')}
-                        </select>
-                    </div>
-                ` : ''}
+                <div style="display:flex; align-items:center; gap:0.6rem;">
+                    <label class="day-plan-mini-label">Assign To</label>
+                    <select class="plan-assignee day-plan-select">
+                        <option value="">None (Unassigned)</option>
+                        ${allUsers.map(u => `<option value="${u.id}">${u.name}</option>`).join('')}
+                    </select>
+                </div>
             </div>
         `;
     container.appendChild(newBlock);
@@ -5194,6 +5201,7 @@ window.app_collectCheckoutTaskUpdates = () => {
         if (detail.action === 'postpone') {
             const date = detail.actionMeta?.postponeDate;
             if (!date) error = 'Select a new date to postpone.';
+            else if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date).trim())) error = 'Select a valid new date to postpone.';
         }
         if (detail.action === 'delegate') {
             const userId = String(detail.actionMeta?.delegateUserId || '').trim();
@@ -5238,7 +5246,8 @@ window.app_openCheckoutActionModal = (key) => {
             : details.action === 'delegate'
                 ? 'Delegate'
                 : 'Action';
-    const postponeDate = app_escapeHtml(details.actionMeta?.postponeDate || new Date(Date.now() + 86400000).toISOString().split('T')[0]);
+    const postponeDate = app_escapeHtml(details.actionMeta?.postponeDate || app_getPostponeDefaultDate());
+    const minPostponeDate = app_toDateKey(app_getISTNowDate());
     const postponeReason = app_escapeHtml(details.actionMeta?.postponeReason || '');
     const delegateNote = app_escapeHtml(details.actionMeta?.delegateNote || '');
     const delegateUserId = app_escapeHtml(details.actionMeta?.delegateUserId || '');
@@ -5274,7 +5283,7 @@ window.app_openCheckoutActionModal = (key) => {
                 </div>
                 <div class="checkout-task-action-extra" data-action-panel-section="postpone" style="display:${details.action === 'postpone' ? 'block' : 'none'};">
                     <label for="postpone-date-${app_escapeJsSingleQuote(key)}">New Date</label>
-                    <input id="postpone-date-${app_escapeJsSingleQuote(key)}" type="date" data-action-field="postponeDate" value="${postponeDate}" onchange="window.app_updateCheckoutTaskActionMeta('${app_escapeJsSingleQuote(key)}','postponeDate', this.value)">
+                    <input id="postpone-date-${app_escapeJsSingleQuote(key)}" type="date" min="${minPostponeDate}" data-action-field="postponeDate" value="${postponeDate}" onchange="window.app_updateCheckoutTaskActionMeta('${app_escapeJsSingleQuote(key)}','postponeDate', this.value)">
                     <label for="postpone-reason-${app_escapeJsSingleQuote(key)}">Reason</label>
                     <textarea id="postpone-reason-${app_escapeJsSingleQuote(key)}" rows="2" data-action-field="postponeReason" placeholder="Optional reason" oninput="window.app_updateCheckoutTaskActionMeta('${app_escapeJsSingleQuote(key)}','postponeReason', this.value)">${postponeReason}</textarea>
                 </div>
@@ -5356,7 +5365,7 @@ window.app_applyCheckoutTaskUpdates = async (updates = [], options = {}) => {
     const updaterId = currentUser?.id || currentUser?.name || 'staff';
     const effectiveDate = String(options.effectiveDate || new Date().toISOString().split('T')[0]);
     const eventTimestamp = String(options.timestamp || new Date().toISOString());
-    const planSplices = {}; // { planId: [taskIndices] } — defer splices to avoid index corruption
+    const skippedErrors = [];
     for (const update of updates) {
         const plan = await window.AppDB.get('work_plans', update.planId).catch(() => null);
         if (!plan || !Array.isArray(plan.plans)) {
@@ -5372,6 +5381,10 @@ window.app_applyCheckoutTaskUpdates = async (updates = [], options = {}) => {
             currentUserId: currentUser?.id || updaterId,
             currentUserName: currentUser?.name || ''
         });
+        if (mutation.postponeError) {
+            skippedErrors.push(`"${String(task.task || 'Task').slice(0, 48)}" — ${mutation.postponeError}`);
+            continue;
+        }
         Object.assign(task, mutation.nextTask, {
             budgetHeadId: app_normalizeBudgetHeadId(mutation.nextTask.budgetHeadId)
         });
@@ -5379,9 +5392,13 @@ window.app_applyCheckoutTaskUpdates = async (updates = [], options = {}) => {
         await window.AppDB.put('work_plans', plan);
         if (mutation.postponedTask) {
             const postponedTask = mutation.postponedTask;
-            await window.AppCalendar.addWorkPlanTask(postponedTask.date, currentUser?.id || updaterId, postponedTask.taskDescription, postponedTask.subPlans || [], postponedTask.meta);
-            planSplices[update.planId] = planSplices[update.planId] || [];
-            planSplices[update.planId].push(update.taskIndex);
+            // Postponed copies go to the assignee's plan; the source task stays in
+            // place marked 'postponed' (same rule as app_postponeTask).
+            const assigneeId = String(postponedTask.meta.assignedTo || postponedTask.userId || '').trim() || currentUser?.id || updaterId;
+            await window.AppCalendar.addWorkPlanTask(postponedTask.date, assigneeId, postponedTask.taskDescription, postponedTask.subPlans || [], {
+                ...postponedTask.meta,
+                assignedTo: assigneeId
+            });
         }
         if (update.action === 'delegate') {
             const delegateUserId = String(update.actionMeta?.delegateUserId || '').trim();
@@ -5408,19 +5425,13 @@ window.app_applyCheckoutTaskUpdates = async (updates = [], options = {}) => {
             effectiveDate
         }).catch(() => null);
     }
-    // Apply deferred splices in descending order to prevent index corruption (Bug #1)
-    for (const [planId, indices] of Object.entries(planSplices)) {
-        indices.sort((a, b) => b - a);
-        const plan = await window.AppDB.get('work_plans', planId).catch(() => null);
-        if (!plan || !Array.isArray(plan.plans)) continue;
-        for (const idx of indices) {
-            plan.plans.splice(idx, 1);
-        }
-        plan.updatedAt = new Date().toISOString();
-        await window.AppDB.put('work_plans', plan);
-    }
     if (window.AppStore && window.AppStore.invalidatePlans) {
         window.AppStore.invalidatePlans();
+    }
+
+    // Never fail silently: surface skipped updates so the caller can warn the user.
+    if (skippedErrors.length > 0) {
+        throw new Error(`Some task updates were skipped: ${skippedErrors.join('; ')}`);
     }
 };
 
@@ -5441,6 +5452,16 @@ window.app_deleteDayPlan = async (date, targetUserId = null, planScope = null) =
                 window.AppCalendar.deleteWorkPlan(date, targetId, { planScope: 'annual' })
             ]);
         }
+        // Deleting the owner's plan must also prune the copies previously pushed into
+        // assignees' personal plans, otherwise staff keep seeing deleted tasks forever.
+        if (!hasScope || planScope === 'personal') {
+            await window.app_reconcileAssignedPlans({
+                date,
+                targetId,
+                targetPersonalPlanId: window.AppCalendar.getWorkPlanId(date, targetId, 'personal'),
+                savedByAssignee: new Map()
+            }).catch((err) => console.warn('Assigned-plan reconciliation failed:', err));
+        }
         if (window.AppStore && window.AppStore.invalidatePlans) {
             window.AppStore.invalidatePlans(); // CACHE INVALIDATION
         }
@@ -5458,6 +5479,72 @@ window.app_deleteDayPlan = async (date, targetUserId = null, planScope = null) =
             alert(err.message);
         }
     }
+};
+
+/**
+ * Prune stale copies of an owner's tasks from assignees' personal plans for a date.
+ * The per-assignee save path only rewrites plans for assignees who received a task in
+ * the current save; when a task is unassigned, deleted, or moved to a different
+ * assignee, the old copy stays behind in the previous assignee's plan. This scans all
+ * personal plans for the date and removes any task still tagged with the owner's
+ * source plan id that was not re-saved to that assignee in this save.
+ */
+window.app_reconcileAssignedPlans = async ({ date, targetId, targetPersonalPlanId, savedByAssignee = new Map() }) => {
+    const dateKey = String(date || '').trim();
+    const ownerId = String(targetId || '').trim();
+    if (!dateKey || !ownerId || !targetPersonalPlanId) return { ok: false, pruned: 0, reason: 'missing_context' };
+    if (!window.AppDB?.queryMany) return { ok: false, pruned: 0, reason: 'no_query_support' };
+
+    const plans = await window.AppDB.queryMany('work_plans', [
+        { field: 'date', operator: '==', value: dateKey }
+    ]).catch((err) => {
+        console.warn('Assigned-plan reconciliation query failed:', err);
+        return [];
+    });
+
+    const pruned = [];
+    const writes = [];
+    (Array.isArray(plans) ? plans : []).forEach((plan) => {
+        if (!plan || !Array.isArray(plan.plans)) return;
+        // queryMany may fall back to an unfiltered getAll when the Firestore composite
+        // index is missing — always re-check the date in memory to stay date-safe.
+        if (String(plan.date || '').trim() !== dateKey) return;
+        if (String(plan.planScope || '') !== 'personal') return;
+        const assigneeId = String(plan.userId || '').trim();
+        if (!assigneeId || assigneeId === ownerId) return;
+        if (!plan.plans.some((t) => String(t?.assignedFromPlanId || '') === targetPersonalPlanId)) return;
+
+        const savedIndices = savedByAssignee.get(assigneeId);
+        const kept = plan.plans.filter((t) => {
+            if (String(t?.assignedFromPlanId || '') !== targetPersonalPlanId) return true;
+            // Legacy copies without a task index can't be matched to a current block → drop.
+            if (t.assignedFromTaskIndex == null) return false;
+            // Keep only tasks re-saved to this assignee in this save.
+            return savedIndices && savedIndices.has(t.assignedFromTaskIndex);
+        });
+        if (kept.length === plan.plans.length) return;
+
+        pruned.push({ assigneeId, removed: plan.plans.length - kept.length });
+        writes.push((async () => {
+            if (kept.length === 0) {
+                const planId = String(plan.id || '') || (window.AppCalendar?.getWorkPlanId
+                    ? window.AppCalendar.getWorkPlanId(dateKey, assigneeId, 'personal')
+                    : '');
+                if (planId) await window.AppDB.delete('work_plans', planId).catch(() => null);
+            } else {
+                plan.plans = kept;
+                plan.updatedAt = new Date().toISOString();
+                await window.AppDB.put('work_plans', plan).catch(() => null);
+            }
+        })());
+    });
+
+    await Promise.all(writes);
+    if (pruned.length > 0) {
+        const total = pruned.reduce((n, p) => n + Number(p.removed || 0), 0);
+        console.info(`Assigned-plan reconciliation pruned ${total} stale task cop${total === 1 ? 'y' : 'ies'}.`);
+    }
+    return { ok: true, pruned };
 };
 
 window.app_saveDayPlan = async (e, date, targetUserId = null) => {
@@ -5483,6 +5570,7 @@ window.app_saveDayPlan = async (e, date, targetUserId = null) => {
     const plans = [];
     const personalPlans = [];
     const annualPlans = [];
+    const personalPlansByAssignee = {};
     const planIdsByScope = {};
     let validationError = '';
 
@@ -5498,7 +5586,14 @@ window.app_saveDayPlan = async (e, date, targetUserId = null) => {
         }));
         const status = block.querySelector('.plan-status').value;
         const assigneeSelect = block.querySelector('.plan-assignee');
+        const assigneeNameInput = block.querySelector('.plan-assignee-name');
         const assignedTo = assigneeSelect ? assigneeSelect.value : targetId;
+        const blockIndex = Number.parseInt(block.getAttribute('data-index'), 10);
+        const assignedToName = assigneeNameInput
+            ? String(assigneeNameInput.value || '').trim()
+            : (assignedTo && assigneeSelect
+                ? (Array.from(assigneeSelect.options).find(o => o.value === assignedTo)?.textContent || '').trim()
+                : '');
         const startDateInput = block.querySelector('.plan-start-date');
         const endDateInput = block.querySelector('.plan-end-date');
         const startDate = startDateInput ? String(startDateInput.value || '').trim() : '';
@@ -5509,6 +5604,8 @@ window.app_saveDayPlan = async (e, date, targetUserId = null) => {
         const budgetHeadSelect = block.querySelector('.plan-budget-head');
         const taskScope = scopeSelect && scopeSelect.value === 'annual' ? 'annual' : 'personal';
         const budgetHeadId = String(budgetHeadSelect?.value || currentUser.currentBudgetHeadId || 'UNALLOCATED');
+        const isPrivate = block.querySelector('.plan-private')?.value === '1';
+        const sourcePlanId = block.querySelector('.plan-source-plan-id')?.value || '';
 
         if (task) {
             if ((startDate && !endDate) || (!startDate && endDate)) {
@@ -5527,16 +5624,25 @@ window.app_saveDayPlan = async (e, date, targetUserId = null) => {
                 tags,
                 status: status || null,
                 assignedTo: assignedTo || null,
+                assignedToName,
                 budgetHeadId,
                 startDate: taskStartDate,
                 endDate: taskEndDate,
                 planScope: taskScope,
                 carryForwardRootId: carryForwardRootId || null,
-                completedDate: status === 'completed' ? new Date().toISOString().split('T')[0] : null
+                completedDate: status === 'completed' ? new Date().toISOString().split('T')[0] : null,
+                assignedFromTaskIndex: Number.isFinite(blockIndex) ? blockIndex : null,
+                assignedFromPlanId: sourcePlanId || null,
+                isPrivate
             };
             plans.push(planPayload);
             if (taskScope === 'annual') annualPlans.push(planPayload);
-            else personalPlans.push(planPayload);
+            else {
+                personalPlans.push(planPayload);
+                const assigneeKey = String(assignedTo || targetId || '').trim() || targetId;
+                if (!personalPlansByAssignee[assigneeKey]) personalPlansByAssignee[assigneeKey] = [];
+                personalPlansByAssignee[assigneeKey].push(planPayload);
+            }
         }
     });
 
@@ -5560,7 +5666,11 @@ window.app_saveDayPlan = async (e, date, targetUserId = null) => {
         };
         plans.push(removedPayload);
         if (removedScope === 'annual') annualPlans.push(removedPayload);
-        else personalPlans.push(removedPayload);
+        else {
+            personalPlans.push(removedPayload);
+            if (!personalPlansByAssignee[targetId]) personalPlansByAssignee[targetId] = [];
+            personalPlansByAssignee[targetId].push(removedPayload);
+        }
     });
 
     if (validationError) {
@@ -5568,6 +5678,19 @@ window.app_saveDayPlan = async (e, date, targetUserId = null) => {
         restore();
         return;
     }
+
+    // Map of assigneeId → set of source task indices saved to them in this save.
+    // Used by the reconciliation pass to distinguish re-saved copies from stale ones.
+    const savedAssignedIndices = new Map();
+    Object.entries(personalPlansByAssignee).forEach(([assigneeId, assigneePlans]) => {
+        if (String(assigneeId) === String(targetId)) return;
+        savedAssignedIndices.set(assigneeId, new Set(
+            (Array.isArray(assigneePlans) ? assigneePlans : [])
+                .filter(Boolean)
+                .map((t) => t.assignedFromTaskIndex)
+                .filter((idx) => Number.isFinite(idx))
+        ));
+    });
 
     let skipSave = false;
     try {
@@ -5582,28 +5705,82 @@ window.app_saveDayPlan = async (e, date, targetUserId = null) => {
             if (hadPersonal) deletions.push(window.AppCalendar.deleteWorkPlan(date, targetId, { planScope: 'personal' }));
             if (hadAnnual) deletions.push(window.AppCalendar.deleteWorkPlan(date, targetId, { planScope: 'annual' }));
             await Promise.all(deletions);
+            // Stale copies of the deleted tasks may still live in assignees' plans.
+            await window.app_reconcileAssignedPlans({
+                date,
+                targetId,
+                targetPersonalPlanId: window.AppCalendar.getWorkPlanId(date, targetId, 'personal'),
+                savedByAssignee: savedAssignedIndices
+            }).catch((err) => console.warn('Assigned-plan reconciliation failed:', err));
             // Skip the setWorkPlan / deleteWorkPlan branches below and go straight to refresh.
             skipSave = true;
             // (fall through to refresh, not re-delete)
         }
 
         if (!skipSave) {
-            // Batch personal + annual writes into a single parallel Firestore call
-            const activeScopes = [];
-            if (personalPlans.length > 0) activeScopes.push('personal');
-            if (annualPlans.length > 0) activeScopes.push('annual');
+            const targetPersonalPlanId = window.AppCalendar.getWorkPlanId(date, targetId, 'personal');
+            const ownerPersonalTasks = (personalPlansByAssignee[targetId] || []).filter(Boolean);
+            const writePromises = [];
 
-            if (activeScopes.length > 0) {
-                // Merge both plan arrays so the single call writes all tasks
-                const mergedPlans = [...personalPlans, ...annualPlans];
-                await window.AppCalendar.setWorkPlan(date, mergedPlans, targetId, {
-                    planScope: activeScopes,
-                    skipCacheInvalidation: true  // we handle it once below
-                });
+            // Write the owner's own plan (tasks assigned to the owner) + annual tasks.
+            const ownerPlans = [...ownerPersonalTasks, ...annualPlans];
+            if (ownerPlans.length > 0) {
+                const ownerScopes = [];
+                if (ownerPersonalTasks.length > 0) ownerScopes.push('personal');
+                if (annualPlans.length > 0) ownerScopes.push('annual');
+                writePromises.push(window.AppCalendar.setWorkPlan(date, ownerPlans, targetId, {
+                    planScope: ownerScopes,
+                    skipCacheInvalidation: true // we handle it once below
+                }));
             }
 
+            // Write per-assignee plans: merge each assignee's existing tasks (minus any
+            // previous tasks pushed from this owner's plan) with the newly assigned tasks.
+            Object.entries(personalPlansByAssignee).forEach(([assigneeId, assigneePlans]) => {
+                if (assigneeId === String(targetId)) return;
+                const assignedTasks = assigneePlans.filter(Boolean);
+                if (assignedTasks.length === 0) return;
+                writePromises.push((async () => {
+                    const existing = await window.AppCalendar.getWorkPlan(assigneeId, date, { planScope: 'personal' }).catch(() => null);
+                    // Build a set of source task indices being replaced in this save so
+                    // we only remove the exact tasks being updated, not all tasks from
+                    // this owner's plan (which could include tasks pushed by other owners).
+                    const replacedIndices = new Set(
+                        assignedTasks
+                            .map((t) => t.assignedFromTaskIndex)
+                            .filter((idx) => Number.isFinite(idx))
+                    );
+                    const kept = Array.isArray(existing?.plans)
+                        ? existing.plans.filter((t) => {
+                            if (String(t?.assignedFromPlanId || '') !== targetPersonalPlanId) return true;
+                            // Old records without assignedFromTaskIndex → remove for
+                            // backwards-compat (can't know which task it was).
+                            if (t.assignedFromTaskIndex == null) return false;
+                            // Keep if this specific index is NOT being replaced this save
+                            return !replacedIndices.has(t.assignedFromTaskIndex);
+                        })
+                        : [];
+                    const tasksWithSource = assignedTasks.map((t) => ({ ...t, assignedFromPlanId: targetPersonalPlanId }));
+                    await window.AppCalendar.setWorkPlan(date, [...kept, ...tasksWithSource], assigneeId, {
+                        planScope: 'personal',
+                        skipCacheInvalidation: true
+                    });
+                })());
+            });
+
+            await Promise.all(writePromises);
+
+            // Remove stale copies of this owner's tasks from assignees who did NOT
+            // receive a re-save this round (unassigned, deleted, or moved elsewhere).
+            await window.app_reconcileAssignedPlans({
+                date,
+                targetId,
+                targetPersonalPlanId,
+                savedByAssignee: savedAssignedIndices
+            }).catch((err) => console.warn('Assigned-plan reconciliation failed:', err));
+
             // Delete scopes that had plans before but now have none
-            if (hadPersonal && personalPlans.length === 0) {
+            if (hadPersonal && ownerPersonalTasks.length === 0) {
                 await window.AppCalendar.deleteWorkPlan(date, targetId, { planScope: 'personal' });
             }
             if (hadAnnual && annualPlans.length === 0) {
@@ -5955,26 +6132,42 @@ window.app_deleteMeeting = async (id) => {
 
 // Helper to postpone a task
 window.app_postponeTask = async (planId, taskIndex, targetDate) => {
-    if (!targetDate) return;
+    if (!targetDate) {
+        window.app_openPostponeModal?.(planId, taskIndex);
+        return;
+    }
     try {
-        await window.AppCalendar.updateTaskStatus(planId, taskIndex, 'postponed');
-        const plan = await window.AppDB.get('work_plans', planId);
+        // Read plan/task and validate BEFORE mutating the source task, so a failed
+        // postpone never strands the original as 'postponed' without a copy.
+        let plan = await window.AppDB.get('work_plans', planId);
         const task = plan?.plans?.[taskIndex];
+        if (!task) throw new Error('Task not found.');
         const ownerUserId = String(plan?.userId || window.AppAuth.getUser()?.id || '').trim();
         if (!ownerUserId) throw new Error('Task owner not found.');
-        const details = (task && task.subPlans && task.subPlans.length) ? ` - ${task.subPlans.join(', ')}` : '';
-        const text = task ? `${task.task}${details}` : '';
-        const fromDate = plan?.date || new Date().toISOString().split('T')[0];
+        const fromDate = plan?.date || app_toDateKey(app_getISTNowDate());
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate) || targetDate <= fromDate) {
+            throw new Error('Postpone date must be after the source date.');
+        }
+        // Re-fetch plan right before mutation to catch any concurrent edits
+        plan = await window.AppDB.get('work_plans', planId);
+        if (!plan || !Array.isArray(plan.plans) || !plan.plans[taskIndex]) {
+            throw new Error('Task was modified by another user. Please refresh and try again.');
+        }
+        const freshTask = plan.plans[taskIndex];
+        await window.AppCalendar.updateTaskStatus(planId, taskIndex, 'postponed');
+        const details = (freshTask && freshTask.subPlans && freshTask.subPlans.length) ? ` - ${freshTask.subPlans.join(', ')}` : '';
+        const text = freshTask ? `${freshTask.task}${details}` : '';
+        const assigneeId = String(freshTask.assignedTo || ownerUserId || '').trim() || ownerUserId;
         const cleanedText = text.replace(/\s*\(Postponed from [^)]+\)\s*$/i, '');
         const postponedText = `${cleanedText} (Postponed from ${fromDate})`;
-        await window.AppCalendar.addWorkPlanTask(targetDate, ownerUserId, postponedText, [], {
+        await window.AppCalendar.addWorkPlanTask(targetDate, assigneeId, postponedText, [], {
             addedFrom: 'postponed',
             sourcePlanId: planId,
             sourceTaskIndex: taskIndex,
             postponedFromDate: fromDate,
             status: 'postponed',
-            assignedTo: ownerUserId,
-            assignedToName: plan?.userName || ''
+            assignedTo: assigneeId,
+            assignedToName: freshTask.assignedToName || plan?.userName || ''
         });
         if (window.AppStore && window.AppStore.invalidatePlans) window.AppStore.invalidatePlans();
         alert(`Task postponed to ${targetDate}`);
@@ -5987,7 +6180,10 @@ window.app_postponeTask = async (planId, taskIndex, targetDate) => {
 window.app_openPostponeModal = function (planId, taskIndex) {
     const modalId = 'postpone-task-modal';
     document.getElementById(modalId)?.remove();
-    const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+    const istNow = app_getISTNowDate();
+    const tomorrowDate = new Date(istNow);
+    tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+    const tomorrow = app_toDateKey(tomorrowDate);
     const html = `
             <div class="modal-overlay" id="${modalId}" style="display:flex;">
                 <div class="modal-content" style="max-width:420px;">
@@ -6012,7 +6208,6 @@ window.app_confirmPostponeTask = async function (planId, taskIndex) {
     document.getElementById('postpone-task-modal')?.remove();
     await window.app_postponeTask(planId, taskIndex, targetDate);
 };
-
 window.app_openDelegateModal = async function (planId, taskIndex) {
     const modalId = 'delegate-task-modal';
     document.getElementById(modalId)?.remove();
@@ -6529,7 +6724,7 @@ window.app_handleChecklistAction = async function (planId, taskIndex, action) {
     if (action === 'postpone') {
         if (!details.actionMeta?.postponeDate) {
             details.actionMeta = details.actionMeta || {};
-            details.actionMeta.postponeDate = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+            details.actionMeta.postponeDate = app_getPostponeDefaultDate();
         }
     }
     window.app_checkoutTaskDetails[actionKey] = details;
@@ -7021,7 +7216,7 @@ async function handleAttendance() {
                                     <div style="display:flex; gap:6px; flex-shrink:0;">
                                         ${p.status === 'completed'
                                     ? '<span style="font-size:0.75rem; color:#059669; font-weight:700;">✅ Done</span>'
-                                    : `<button type="button" onclick="window.app_postponeTask('${p._planId || workPlan.id}', ${typeof p._taskIndex === 'number' ? p._taskIndex : idx})" style="background:#f3e8ff; color:#7c3aed; border:1px solid #ddd6fe; border-radius:8px; padding:6px 12px; font-size:0.8rem; font-weight:600; cursor:pointer;" onmouseover="this.style.background='#ddd6fe'" onmouseout="this.style.background='#f3e8ff'">⌛ Postpone</button>`
+                                    : `<button type="button" onclick="window.app_openPostponeModal('${p._planId || workPlan.id}', ${typeof p._taskIndex === 'number' ? p._taskIndex : idx})" style="background:#f3e8ff; color:#7c3aed; border:1px solid #ddd6fe; border-radius:8px; padding:6px 12px; font-size:0.8rem; font-weight:600; cursor:pointer;" onmouseover="this.style.background='#ddd6fe'" onmouseout="this.style.background='#f3e8ff'">⌛ Postpone</button>`
                                 }
                                     </div>
                                 </div>`;

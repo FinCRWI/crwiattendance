@@ -1023,6 +1023,7 @@ export class Calendar {
             }
 
             plan.plans[taskIndex].assignedTo = newUserId;
+            plan.plans[taskIndex].assignedToName = newUser.name || '';
             plan.updatedAt = new Date().toISOString();
 
             await this.db.put('work_plans', plan);

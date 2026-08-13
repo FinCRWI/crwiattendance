@@ -4,6 +4,7 @@
  */
 
 import { safeHtml } from './helpers.js';
+import { stripPrivateTasksForViewer, getCurrentViewerId } from '../utils/task-visibility.js';
 
 let annualPlanDelegatesBound = false;
 
@@ -171,7 +172,7 @@ export async function renderAnnualPlan() {
         return true;
     };
 
-    const filteredWorkPlans = (plans.workPlans || []).filter(p => {
+    const filteredWorkPlans = stripPrivateTasksForViewer(plans.workPlans || [], getCurrentViewerId()).filter(p => {
         const isAnnualPlan = (p.planScope || 'personal') === 'annual';
         if (isAnnualPlan) {
             if (!staffNeedle) return true;

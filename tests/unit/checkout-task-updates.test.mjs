@@ -57,4 +57,49 @@ describe('checkout-task-updates', () => {
         assert.equal(result.postponedTask.meta.assignedToName, '');
         assert.deepEqual(result.postponedTask.meta.tags, [{ id: 't1', name: 'Urgent' }]);
     });
+
+    it('returns postponeError when postpone date is not after source date', () => {
+        const result = buildCheckoutTaskMutation(
+            { task: 'Follow up', status: 'pending', budgetHeadId: 'OPS' },
+            {
+                action: 'postpone',
+                progressPercent: 0,
+                progressStatus: '',
+                progressNote: '',
+                budgetHeadId: 'OPS',
+                actionMeta: { postponeDate: '2026-07-29' },
+                planId: 'plan_1',
+                taskIndex: 0,
+                timestamp: '2026-07-30T10:00:00.000Z'
+            },
+            { effectiveDate: '2026-07-30', currentUserId: 'u1', planDate: '2026-07-30' }
+        );
+
+        assert.equal(result.nextTask.status, 'pending');
+        assert.equal(result.nextTask.lastCheckoutAction, '');
+        assert.equal(result.postponedTask, null);
+        assert.ok(result.postponeError);
+    });
+
+    it('returns postponeError when no postpone date is provided', () => {
+        const result = buildCheckoutTaskMutation(
+            { task: 'Follow up', status: 'pending', budgetHeadId: 'OPS' },
+            {
+                action: 'postpone',
+                progressPercent: 0,
+                progressStatus: '',
+                progressNote: '',
+                budgetHeadId: 'OPS',
+                actionMeta: {},
+                planId: 'plan_1',
+                taskIndex: 0,
+                timestamp: '2026-07-30T10:00:00.000Z'
+            },
+            { effectiveDate: '2026-07-30', currentUserId: 'u1', planDate: '2026-07-30' }
+        );
+
+        assert.equal(result.nextTask.status, 'pending');
+        assert.equal(result.postponedTask, null);
+        assert.ok(result.postponeError);
+    });
 });

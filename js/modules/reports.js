@@ -1,4 +1,5 @@
 import { AppDB } from './db.js';
+import { isTaskVisibleToViewer, getCurrentViewerId } from '../utils/task-visibility.js';
 
 export class Reports {
     constructor() {
@@ -287,7 +288,9 @@ export class Reports {
                 // 3. Check Work Plans
                 plans.workPlans.forEach(p => {
                     if (p.date === dateStr) {
-                        const tasks = Array.isArray(p.plans) ? p.plans : [];
+                        const tasks = Array.isArray(p.plans)
+                            ? p.plans.filter((task) => task && isTaskVisibleToViewer(task, String(p.userId || ''), getCurrentViewerId()))
+                            : [];
                         const taskDetails = tasks.length > 0
                             ? tasks.map((task, idx) => {
                                 let tStr = `${idx + 1}. ${task.task}`;

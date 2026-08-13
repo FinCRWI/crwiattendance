@@ -15,7 +15,6 @@ export function buildCheckoutTaskMutation(task = {}, update = {}, options = {}) 
     const effectiveDate = String(options.effectiveDate || new Date().toISOString().split('T')[0]);
     const planDate = String(options.planDate || effectiveDate || '').trim();
     const currentUserId = String(options.currentUserId || '').trim();
-    const currentUserName = String(options.currentUserName || '').trim();
     const nextTask = {
         ...task,
         progressPercent: update.progressPercent,
@@ -37,10 +36,19 @@ export function buildCheckoutTaskMutation(task = {}, update = {}, options = {}) 
     const postponeDate = update.action === 'postpone'
         ? normalizeIsoDate(update.actionMeta?.postponeDate)
         : '';
-    const postponedTask = postponeDate
+    const canCreatePostponedCopy = postponeDate && postponeDate > planDate;
+    let postponeError = '';
+    if (update.action === 'postpone' && !canCreatePostponedCopy) {
+        nextTask.status = task.status || '';
+        nextTask.lastCheckoutAction = '';
+        postponeError = !postponeDate
+            ? 'Select a valid new date to postpone.'
+            : 'Postpone date must be after the source date.';
+    }
+    const postponedTask = canCreatePostponedCopy
         ? {
             date: postponeDate,
-            userId: currentUserId,
+            userId: String(task.assignedTo || currentUserId || '').trim() || currentUserId,
             taskDescription: `${buildTaskText(task).replace(/\s*\(Postponed from [^)]+\)\s*$/i, '')} (Postponed from ${planDate})`,
             subPlans: Array.isArray(task.subPlans) ? task.subPlans.slice() : [],
             meta: {
@@ -51,14 +59,15 @@ export function buildCheckoutTaskMutation(task = {}, update = {}, options = {}) 
                 budgetHeadId: String(task.budgetHeadId || 'UNALLOCATED'),
                 tags: Array.isArray(task.tags) ? task.tags.slice() : [],
                 status: 'postponed',
-                assignedTo: currentUserId,
-                assignedToName: currentUserName
+                assignedTo: String(task.assignedTo || currentUserId || '').trim() || currentUserId,
+                assignedToName: String(task.assignedToName || '').trim()
             }
         }
         : null;
 
     return {
         nextTask,
-        postponedTask
+        postponedTask,
+        postponeError
     };
 }

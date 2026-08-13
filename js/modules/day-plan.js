@@ -2,6 +2,7 @@ import { AppAuth } from './auth.js';
 import { AppDB } from './db.js';
 import { AppCalendar } from './calendar.js';
 import { AppConfig } from '../config.js';
+import { isTaskVisibleToViewer } from '../utils/task-visibility.js';
 
 const DAY_PLAN_OVERLAY_BASE_Z_INDEX = 10060;
 const DAY_PLAN_OVERLAY_STEP = 20;
@@ -153,10 +154,22 @@ async function loadDayPlanData(date, targetId) {
         return cached.value;
     }
 
-    // Single query: get all plans for this date, then extract personal + annual from the results.
-    // This avoids 2 extra Firestore reads (AppCalendar.getWorkPlan) since getDayPlansByDate
-    // already returns every document with matching date.
-    const allDayPlans = await AppDB.getDayPlansByDate(safeDate);
+    // Fetch exactly the plan docs that can exist for this date — the annual
+    // shared plan (plan_annual_{date}) plus each user's personal plan
+    // (plan_{userId}_{date}) — by their known doc ids, so no date-scoped
+    // collection query runs on the day-plan open/prefetch path. User ids come
+    // from the cached users list; the target id is added explicitly in case it
+    // is missing from the cache. Falls back to the date query only on error.
+    let allDayPlans;
+    try {
+        const users = await getCachedDayPlanUsers();
+        const userIds = (users || []).map((u) => String(u?.id || '')).filter(Boolean);
+        if (safeTargetId) userIds.push(safeTargetId);
+        allDayPlans = await AppDB.getDayPlansByIds(safeDate, userIds);
+    } catch (err) {
+        console.warn('[DayPlan] Doc-id plan fetch failed, falling back to date query:', err);
+        allDayPlans = await AppDB.getDayPlansByDate(safeDate);
+    }
     const personalId = `plan_${safeTargetId}_${safeDate}`;
     const annualId = `plan_annual_${safeDate}`;
     const personalWorkPlan = allDayPlans.find(p => p.id === personalId) || null;
@@ -340,6 +353,7 @@ function createStatusIndicator(status) {
             iconHTML = '<i class="fa-solid fa-check"></i>';
             break;
         case 'not-completed':
+        case 'postponed':
             cls += ' plan-status-postponed';
             iconHTML = '<i class="fa-regular fa-calendar"></i>';
             break;
@@ -753,13 +767,12 @@ export async function openPlanEditor(args) {
         date,
         targetId,
         scope,
-        allUsers: initialUsers = [],
         selectableCollaborators: initialCollaborators = [],
         isAdmin,
         container,
         existingBlock = null
     } = args;
-    const allUsers = isAdmin ? await getCachedDayPlanUsers() : initialUsers;
+    const allUsers = await getCachedDayPlanUsers();
     const selectableCollaborators = isAdmin
         ? allUsers.filter((user) => user.id !== targetId)
         : initialCollaborators;
@@ -770,11 +783,13 @@ export async function openPlanEditor(args) {
         tags: [],
         status: null,
         assignedTo: targetId,
+        assignedToName: (allUsers.find(u => u.id === targetId)?.name || ''),
         startDate: date,
         endDate: date,
         planScope: scope,
         carryForwardRootId: '',
-        isRemoved: false
+        isRemoved: false,
+        isPrivate: false
     };
 
     const overlay = createElement('div', { className: 'plan-editor-overlay' });
@@ -805,10 +820,26 @@ export async function openPlanEditor(args) {
         <option value="" ${!planData.status ? 'selected' : ''}>Auto-Track</option>
         <option value="completed" ${planData.status === 'completed' ? 'selected' : ''}>✅ Completed</option>
         <option value="in-process" ${planData.status === 'in-process' ? 'selected' : ''}>🔄 In Progress</option>
-        <option value="not-completed" ${planData.status === 'not-completed' ? 'selected' : ''}>📅 Postponed</option>
+        <option value="postponed" ${planData.status === 'postponed' || planData.status === 'not-completed' ? 'selected' : ''}>📅 Postponed</option>
     `;
     statusField.appendChild(statusSelect);
     grid.appendChild(statusField);
+
+    const privacyField = createElement('div', { className: 'plan-editor-field' });
+    privacyField.innerHTML = '<label>Privacy</label>';
+    const privateCheckbox = createElement('input', {
+        className: 'plan-editor-private-check',
+        attributes: planData.isPrivate === true ? { type: 'checkbox', checked: '' } : { type: 'checkbox' }
+    });
+    const privateLabel = createElement('label', {
+        className: 'plan-editor-private-label',
+        children: [
+            privateCheckbox,
+            createElement('span', { textContent: ' Private — only I can see this task' })
+        ]
+    });
+    privacyField.appendChild(privateLabel);
+    grid.appendChild(privacyField);
 
     const budgetField = createElement('div', { className: 'plan-editor-field' });
     budgetField.innerHTML = '<label>Budget Head</label>';
@@ -831,12 +862,20 @@ export async function openPlanEditor(args) {
     grid.appendChild(budgetField);
 
     let assignSelect = null;
-    if (isAdmin) {
+    const canAssign = scope === 'annual' ? isAdmin : true;
+    if (canAssign) {
         const assignField = createElement('div', { className: 'plan-editor-field' });
         assignField.innerHTML = '<label>Assign To</label>';
         assignSelect = createElement('select', { className: 'plan-editor-select' });
+        const noneOption = createElement('option', { textContent: 'None (Unassigned)', attributes: { value: '' } });
+        assignSelect.appendChild(noneOption);
+        const selectedAssigneeId = existingBlock
+            ? String(planData.assignedTo || '').trim()
+            : (scope === 'annual' ? String(planData.assignedTo || targetId || '').trim() : '');
         allUsers.forEach(u => {
-            const opt = createElement('option', { textContent: u.name, attributes: { value: u.id, selected: u.id === planData.assignedTo } });
+            const attrs = { value: u.id };
+            if (u.id === selectedAssigneeId) attrs.selected = '';
+            const opt = createElement('option', { textContent: u.name, attributes: attrs });
             assignSelect.appendChild(opt);
         });
         assignField.appendChild(assignSelect);
@@ -915,10 +954,14 @@ export async function openPlanEditor(args) {
                 status: statusSelect.value,
                 budgetHeadId: String(budgetSelect.value || 'UNALLOCATED'),
                 assignedTo: assignSelect ? assignSelect.value : (planData.assignedTo || targetId),
+                assignedToName: assignSelect
+                    ? (allUsers.find(u => u.id === assignSelect.value)?.name || '')
+                    : (planData.assignedToName || ''),
                 tags: Array.isArray(planData.tags) ? planData.tags : [],
                 subPlans: Array.from(subPlanList.querySelectorAll('.plan-editor-subplan-input'))
                     .map((input) => String(input.value || '').trim())
-                    .filter(Boolean)
+                    .filter(Boolean),
+                isPrivate: privateCheckbox.checked
             };
 
             const blockArgs = {
@@ -1025,10 +1068,39 @@ export async function quickAddPersonalPlan(date = null, targetUserId = null) {
         <option value="" selected>Auto-Track</option>
         <option value="completed">Completed</option>
         <option value="in-process">In Progress</option>
-        <option value="not-completed">Postponed</option>
+        <option value="postponed">Postponed</option>
     `;
     statusField.appendChild(statusSelect);
     grid.appendChild(statusField);
+
+    const allUsers = await getCachedDayPlanUsers();
+    const assigneeField = createElement('div', { className: 'plan-editor-field' });
+    assigneeField.innerHTML = '<label>Assign To</label>';
+    const assigneeSelect = createElement('select', { className: 'plan-editor-select' });
+    const noneOption = createElement('option', { textContent: 'None (Unassigned)', attributes: { value: '' } });
+    assigneeSelect.appendChild(noneOption);
+    allUsers.forEach(u => {
+        const opt = createElement('option', { textContent: u.name, attributes: { value: u.id } });
+        assigneeSelect.appendChild(opt);
+    });
+    assigneeField.appendChild(assigneeSelect);
+    grid.appendChild(assigneeField);
+
+    const privacyField = createElement('div', { className: 'plan-editor-field' });
+    privacyField.innerHTML = '<label>Privacy</label>';
+    const privateCheckbox = createElement('input', {
+        className: 'plan-editor-private-check',
+        attributes: { type: 'checkbox' }
+    });
+    const privateLabel = createElement('label', {
+        className: 'plan-editor-private-label',
+        children: [
+            privateCheckbox,
+            createElement('span', { textContent: ' Private — only I can see this task' })
+        ]
+    });
+    privacyField.appendChild(privateLabel);
+    grid.appendChild(privacyField);
     body.appendChild(grid);
 
     const stepsField = createElement('div', { className: 'plan-editor-subplans' });
@@ -1100,8 +1172,12 @@ export async function quickAddPersonalPlan(date = null, targetUserId = null) {
                 .map((input) => String(input.value || '').trim())
                 .filter(Boolean);
 
+            const rawAssigneeId = String(assigneeSelect?.value || '').trim();
+            const assigneeId = rawAssigneeId || targetId;
+            const assigneeName = rawAssigneeId ? (allUsers.find(u => u.id === assigneeId)?.name || '') : '';
+
             try {
-                const existingPlan = await AppCalendar.getWorkPlan(targetId, selectedDate, { planScope: 'personal' });
+                const existingPlan = await AppCalendar.getWorkPlan(assigneeId, selectedDate, { planScope: 'personal' });
                 const nextPlans = Array.isArray(existingPlan?.plans)
                     ? existingPlan.plans.filter((task) => task && task.isRemoved !== true)
                     : [];
@@ -1111,16 +1187,18 @@ export async function quickAddPersonalPlan(date = null, targetUserId = null) {
                     subPlans: stepItems,
                     tags: [],
                     status: statusSelect.value || null,
-                    assignedTo: targetId,
+                    assignedTo: rawAssigneeId || null,
+                    assignedToName: assigneeName,
                     budgetHeadId: currentUser.currentBudgetHeadId || 'UNALLOCATED',
                     startDate: selectedDate,
                     endDate: selectedDate,
                     planScope: 'personal',
                     carryForwardRootId: '',
-                    isRemoved: false
+                    isRemoved: false,
+                    isPrivate: privateCheckbox.checked
                 });
 
-                await AppCalendar.setWorkPlan(selectedDate, nextPlans, targetId, { planScope: 'personal' });
+                await AppCalendar.setWorkPlan(selectedDate, nextPlans, assigneeId, { planScope: 'personal' });
                 if (window.AppStore?.invalidatePlans) window.AppStore.invalidatePlans();
                 removeOverlay(overlay);
                 if (typeof window.app_refreshCurrentPage === 'function') {
@@ -1166,12 +1244,12 @@ export function dayPlanRenderBlockV3(args) {
         defaultScope = 'personal',
         selectableCollaborators = [],
         isAdmin = false,
-        currentUserId = '',
         isReference = false
     } = args || {};
 
     const task = String(plan.task || '');
-    const assignedTo = plan.assignedTo || targetId || currentUserId;
+    const assignedTo = plan.assignedTo ?? '';
+    const assignedToName = String(plan.assignedToName || (assignedTo ? allUsers.find(u => u.id === assignedTo)?.name : '') || '');
     const startDate = plan.startDate || '';
     const endDate = plan.endDate || '';
     const scope = String(plan.planScope || plan._planScope || defaultScope) === 'annual' ? 'annual' : 'personal';
@@ -1184,11 +1262,11 @@ export function dayPlanRenderBlockV3(args) {
     /* Determine block class based on status */
     let blockStatusClass = '';
     if (planStatus === 'completed') blockStatusClass = ' plan-block-done';
-    else if (planStatus === 'not-completed') blockStatusClass = ' plan-block-postponed';
+    else if (planStatus === 'not-completed' || planStatus === 'postponed') blockStatusClass = ' plan-block-postponed';
     else if (planStatus === 'in-process') blockStatusClass = ' plan-block-active';
 
     const planBlock = createElement('div', {
-        className: (isReference ? 'plan-block-ref' : 'plan-block') + blockStatusClass + (isReference ? ' is-reference-only' : ''),
+        className: (isReference ? 'plan-block-ref' : 'plan-block') + blockStatusClass + (isReference ? ' is-reference-only' : '') + (plan.isPrivate === true ? ' plan-block-private' : ''),
         attributes: { 'data-index': idx, 'data-status': planStatus || 'none' }
     });
 
@@ -1199,10 +1277,13 @@ export function dayPlanRenderBlockV3(args) {
         <select class="plan-budget-head"><option value="${esc(budgetHeadId)}" selected></option></select>
         <select class="plan-scope"><option value="${esc(scope)}" selected></option></select>
         <select class="plan-assignee"><option value="${esc(assignedTo)}" selected></option></select>
+        <input class="plan-assignee-name" value="${esc(assignedToName)}">
         <input class="plan-start-date" value="${esc(startDate)}">
         <input class="plan-end-date" value="${esc(endDate)}">
         <input class="plan-root-id" value="${esc(plan.carryForwardRootId || '')}">
         <input class="plan-removed-flag" value="${plan.isRemoved === true ? '1' : '0'}">
+        <input class="plan-private" value="${plan.isPrivate === true ? '1' : '0'}">
+        <input class="plan-source-plan-id" value="${esc(plan.assignedFromPlanId || '')}">
     `;
     if (plan.subPlans) {
         plan.subPlans.forEach(s => {
@@ -1250,6 +1331,12 @@ export function dayPlanRenderBlockV3(args) {
     headerActions.appendChild(createElement('span', { className: 'day-plan-scope-pill', textContent: displayScope }));
 
     if (!isReference) {
+        headerActions.appendChild(createButton({
+            className: 'day-plan-private-toggle' + (plan.isPrivate === true ? ' is-private' : ''),
+            attributes: { title: plan.isPrivate === true ? 'Private — only you can see this task' : 'Make private — only you can see this task' },
+            innerHTML: plan.isPrivate === true ? '<i class="fa-solid fa-lock"></i>' : '<i class="fa-solid fa-lock-open"></i>',
+            onClick: () => togglePlanBlockPrivate(planBlock)
+        }));
         headerActions.appendChild(createButton({
             className: 'day-plan-edit-btn',
             attributes: { title: 'Edit plan' },
@@ -1311,10 +1398,13 @@ export function app_extractBlockData(block) {
     const planScope = block.querySelector('.plan-scope')?.value || 'personal';
     const budgetHeadId = block.querySelector('.plan-budget-head')?.value || 'UNALLOCATED';
     const assignedTo = block.querySelector('.plan-assignee')?.value || '';
+    const assignedToName = block.querySelector('.plan-assignee-name')?.value || '';
     const startDate = block.querySelector('.plan-start-date')?.value || '';
     const endDate = block.querySelector('.plan-end-date')?.value || '';
     const carryForwardRootId = block.querySelector('.plan-root-id')?.value || '';
     const isRemoved = block.querySelector('.plan-removed-flag')?.value === '1';
+    const isPrivate = block.querySelector('.plan-private')?.value === '1';
+    const assignedFromPlanId = block.querySelector('.plan-source-plan-id')?.value || '';
 
     const subPlans = Array.from(block.querySelectorAll('.sub-plan-input')).map(i => i.value);
     const tags = Array.from(block.querySelectorAll('.tag-chip')).map(c => ({
@@ -1323,8 +1413,27 @@ export function app_extractBlockData(block) {
         status: c.dataset.status
     }));
 
-    return { task, status, planScope, budgetHeadId, assignedTo, startDate, endDate, subPlans, tags, carryForwardRootId, isRemoved };
+    return { task, status, planScope, budgetHeadId, assignedTo, assignedToName, startDate, endDate, subPlans, tags, carryForwardRootId, isRemoved, isPrivate, assignedFromPlanId };
 }
+
+export function togglePlanBlockPrivate(trigger) {
+    // Accept either the .plan-block element itself or a button inside it.
+    const block = (trigger && typeof trigger.classList?.contains === 'function' && trigger.classList.contains('plan-block'))
+        ? trigger
+        : (trigger?.closest ? trigger.closest('.plan-block') : null);
+    if (!block) return;
+    const input = block.querySelector('.plan-private');
+    const isNowPrivate = input?.value !== '1';
+    if (input) input.value = isNowPrivate ? '1' : '0';
+    const btn = block.querySelector('.day-plan-private-toggle');
+    if (btn) {
+        btn.classList.toggle('is-private', isNowPrivate);
+        btn.innerHTML = isNowPrivate ? '<i class="fa-solid fa-lock"></i>' : '<i class="fa-solid fa-lock-open"></i>';
+        btn.title = isNowPrivate ? 'Private — only you can see this task' : 'Make private — only you can see this task';
+    }
+    block.classList.toggle('plan-block-private', isNowPrivate);
+}
+
 
 const isAutoForwardedTask = (task) => {
     if (!task || typeof task !== 'object') return false;
@@ -1533,7 +1642,8 @@ export async function openDayPlan(date, targetUserId = null, forcedScope = null,
                         planScope: scope,
                         userName: userName || workPlan.userName,
                         isReference: !!userName
-                    })).filter(p => p.isRemoved !== true && (!hideAutoForwardedTasks || !isAutoForwardedTask(p)));
+                    })).filter(p => p.isRemoved !== true && (!hideAutoForwardedTasks || !isAutoForwardedTask(p)))
+                        .filter(p => isTaskVisibleToViewer(p, String(workPlan.userId || ''), String(currentUser?.id || '')));
                 }
                 return [];
             };
@@ -1560,7 +1670,7 @@ export async function openDayPlan(date, targetUserId = null, forcedScope = null,
                     tags: [],
                     status: null,
                     budgetHeadId: AppAuth.getUser()?.currentBudgetHeadId || 'UNALLOCATED',
-                    assignedTo: targetId,
+                    assignedTo: '',
                     startDate: dateKey,
                     endDate: dateKey,
                     planScope: defaultScope
@@ -1641,7 +1751,8 @@ const AppDayPlan = {
     prefetchDayPlan,
     quickAddPersonalPlan,
     quickEditPersonalPlan,
-    app_extractBlockData
+    app_extractBlockData,
+    togglePlanBlockPrivate
 };
 
 window.AppDayPlan = AppDayPlan;
@@ -1652,6 +1763,7 @@ window.app_prefetchDayPlan = prefetchDayPlan;
 window.app_quickAddPersonalPlan = quickAddPersonalPlan;
 window.app_quickEditPersonalPlan = quickEditPersonalPlan;
 window.app_extractBlockData = app_extractBlockData;
+window.app_togglePlanBlockPrivate = togglePlanBlockPrivate;
 window.app_markTaskRemoved = function (block) {
     if (!block) return;
     const form = block.closest('.day-plan-form');

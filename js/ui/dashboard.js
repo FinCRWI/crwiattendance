@@ -6,6 +6,7 @@
 import { safeHtml, safeUrl, timeAgo } from './helpers.js';
 import { renderStarRating, renderTaskStatusBadge } from './common.js';
 import { normalizeTaskStatus } from '../utils/task-status.js';
+import { isTaskVisibleToViewer } from '../utils/task-visibility.js';
 import { renderYearlyPlan } from './team-schedule.js';
 import { renderJourneyReflectionCard } from './journey-reflection.js';
 import { AppConfig } from '../config.js';
@@ -31,15 +32,11 @@ import { getTodayFeast, loadFeastImage, getLiturgicalSeasonColor, getLiturgicalS
 const escapeJsSingleQuote = (value) => String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 const WORKLOG_PAGE_SIZE = 25;
 const DASHBOARD_IST_TIME_ZONE = 'Asia/Kolkata';
-const DASHBOARD_WORK_PLAN_STATUS_PRIORITY = {
+const PLANNED_TASK_STATUS_RANK = {
     'in-process': 0,
     overdue: 1,
     'to-be-started': 2,
-    completed: 3,
-    'not-completed': 4,
-    cancelled: 5,
-    canceled: 5,
-    removed: 6
+    postponed: 3
 };
 const DASHBOARD_SECTION_ROUTE_CARD_IDS = new Set([
     'checkin',
@@ -80,100 +77,88 @@ const getDashboardTodayIso = () => {
 
 const isActionablePlannedTaskStatus = (status) => {
     const normalized = String(status || '').toLowerCase().trim();
-    return !['completed', 'not-completed', 'cancelled', 'canceled', 'removed'].includes(normalized);
+    // 'not-completed' is the legacy alias of 'postponed' (old editor value) — both are
+    // actionable and must keep showing in the widget; only genuinely closed statuses are hidden.
+    return !['completed', 'cancelled', 'canceled', 'removed'].includes(normalized);
 };
 
-const normalizeDashboardPlannedTaskRows = (workPlans, targetStaffId, fromIso = '', toIso = '') => {
+const getPlannedTaskRows = (workPlans, userId, fromKey, toKey, viewerId = '') => {
     const rows = [];
-    const selectedStaffId = String(targetStaffId || '').trim();
-    const fromKey = String(fromIso || '').trim();
-    const toKey = String(toIso || '').trim();
+    const uid = String(userId || '').trim();
+    if (!uid) return rows;
+    const from = String(fromKey || '').trim();
+    const to = String(toKey || '').trim();
 
     (Array.isArray(workPlans) ? workPlans : []).forEach((plan) => {
         if (!plan) return;
         const planDate = String(plan.date || '').trim();
         if (!planDate) return;
-        if (fromKey && planDate < fromKey) return;
-        if (toKey && planDate > toKey) return;
-        if (selectedStaffId && String(plan.userId || '') !== selectedStaffId) return;
+        if (from && planDate < from) return;
+        if (to && planDate > to) return;
+        if (String(plan.userId || '') !== uid) return;
 
-        const taskItems = Array.isArray(plan.plans) ? plan.plans : [];
-        taskItems.forEach((task, taskIndex) => {
+        (Array.isArray(plan.plans) ? plan.plans : []).forEach((task, idx) => {
             if (!task || task.isRemoved === true) return;
+            // Private tasks are visible only to the plan owner or the assignee.
+            if (!isTaskVisibleToViewer(task, String(plan.userId || ''), String(viewerId || ''))) return;
             const status = normalizeTaskStatus(task, planDate, window.AppCalendar?.getSmartTaskStatus);
+            if (!isActionablePlannedTaskStatus(status)) return;
             rows.push({
                 date: planDate,
-                userId: String(plan.userId || selectedStaffId || ''),
-                userName: String(plan.userName || ''),
+                userId: uid,
                 planId: String(plan.id || ''),
-                taskIndex,
+                taskIndex: idx,
                 task: String(task.task || task.description || 'Planned task'),
                 status,
-                rawStatus: String(task.status || '').trim(),
                 planScope: String(task.planScope || plan.planScope || 'personal'),
-                subPlans: Array.isArray(task.subPlans) ? task.subPlans : [],
-                completedDate: task.completedDate || '',
-                updatedAt: plan.updatedAt || '',
-                isActionable: isActionablePlannedTaskStatus(status),
-                originalIndex: taskIndex
+                isPrivate: task.isPrivate === true,
+                subPlans: Array.isArray(task.subPlans) ? task.subPlans : []
             });
         });
     });
 
     rows.sort((a, b) => {
-        const aRank = DASHBOARD_WORK_PLAN_STATUS_PRIORITY[a.status] ?? 99;
-        const bRank = DASHBOARD_WORK_PLAN_STATUS_PRIORITY[b.status] ?? 99;
-        if (aRank !== bRank) return aRank - bRank;
-        const dateDiff = new Date(a.date) - new Date(b.date);
-        if (dateDiff !== 0) return dateDiff;
-        if (a.originalIndex !== b.originalIndex) return a.originalIndex - b.originalIndex;
-        return String(a.task || '').localeCompare(String(b.task || ''));
+        const ra = PLANNED_TASK_STATUS_RANK[a.status] ?? 99;
+        const rb = PLANNED_TASK_STATUS_RANK[b.status] ?? 99;
+        if (ra !== rb) return ra - rb;
+        if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+        return a.taskIndex - b.taskIndex;
     });
 
     return rows;
 };
 
-const renderPlannedTaskItem = (row, index, currentUserId, isAdmin) => {
-    const ownerId = String(row.userId || '').trim();
-    const isOwner = !!currentUserId && currentUserId === ownerId;
-    const canComplete = !!row.planId && Number.isInteger(row.taskIndex) && (isOwner || isAdmin) && row.isActionable;
-    const canPostpone = !!row.planId && Number.isInteger(row.taskIndex) && isOwner && row.isActionable;
-    const dateLabel = safeHtml(row.date || '--');
+const renderPlannedTaskItem = (row, index, viewerId, isAdmin) => {
+    // Only the task owner or an admin can act on a task. The rows here are filtered to
+    // the viewed staff member's own plans, so compare against the real signed-in user.
+    const canManage = !!row.planId && Number.isInteger(row.taskIndex)
+        && (String(viewerId || '') === String(row.userId || '') || isAdmin);
+    const canPostpone = canManage;
+    const canComplete = canManage;
     const stepCount = Array.isArray(row.subPlans) ? row.subPlans.length : 0;
-    const stepChip = stepCount ? `<span class="dashboard-planned-task-chip">${stepCount} step${stepCount === 1 ? '' : 's'}</span>` : '';
-    const scopeChip = row.planScope ? `<span class="dashboard-planned-task-chip">${safeHtml(row.planScope)}</span>` : '';
-    const completedChip = row.completedDate ? `<span class="dashboard-planned-task-chip is-complete">Done ${safeHtml(row.completedDate)}</span>` : '';
-    const actionDate = escapeJsSingleQuote(String(row.date || ''));
-    const actionUserId = escapeJsSingleQuote(String(ownerId || ''));
-    const actionPlanId = escapeJsSingleQuote(String(row.planId || ''));
-    const actionTaskIndex = Number.isInteger(row.taskIndex) ? row.taskIndex : 0;
 
     return `
-        <div class="dashboard-planned-task-item ${safeHtml(String(row.status || '').toLowerCase().replace(/\s+/g, '-'))}" tabindex="0" role="button" aria-label="Toggle actions for ${safeHtml(row.task || 'planned task')}">
+        <div class="dashboard-planned-task-item ${safeHtml(String(row.status || '').toLowerCase().replace(/\s+/g, '-'))}" tabindex="0" role="button" aria-label="Toggle actions for ${safeHtml(row.task)}">
             <div class="dashboard-planned-task-main">
-                <div class="dashboard-planned-task-title">${index + 1}. ${safeHtml(row.task || 'Planned task')}</div>
+                <div class="dashboard-planned-task-title">${index + 1}. ${safeHtml(row.task)}</div>
                 <div class="dashboard-planned-task-meta">
                     ${renderTaskStatusBadge(row.status)}
-                    <span class="dashboard-planned-task-chip">${dateLabel}</span>
-                    ${scopeChip}
-                    ${stepChip}
-                    ${completedChip}
+                    ${row.isPrivate ? `<span class="dashboard-planned-task-chip dashboard-planned-task-chip-private" title="Private — only you can see this task"><i class="fa-solid fa-lock"></i> Private</span>` : ''}
+                    <span class="dashboard-planned-task-chip">${safeHtml(row.date)}</span>
+                    <span class="dashboard-planned-task-chip">${safeHtml(row.planScope)}</span>
+                    ${stepCount ? `<span class="dashboard-planned-task-chip">${stepCount} step${stepCount === 1 ? '' : 's'}</span>` : ''}
                 </div>
             </div>
             <div class="dashboard-planned-task-actions">
-                <button type="button" class="dashboard-planned-task-btn edit" data-ts-action="edit-task" data-date="${actionDate}" data-user-id="${actionUserId}">
+                <button type="button" class="dashboard-planned-task-btn edit" data-ts-action="edit-task" data-date="${escapeJsSingleQuote(row.date)}" data-user-id="${escapeJsSingleQuote(row.userId)}">
                     <i class="fa-solid fa-pen-to-square"></i><span>Edit</span>
                 </button>
-                ${canPostpone ? `
-                    <button type="button" class="dashboard-planned-task-btn postpone" data-ts-action="postpone-task" data-plan-id="${actionPlanId}" data-task-index="${actionTaskIndex}" data-plan-scope="${safeHtml(row.planScope || 'personal')}" data-user-id="${actionUserId}" data-date="${actionDate}">
-                        <i class="fa-solid fa-clock"></i><span>Postpone</span>
-                    </button>
-                ` : ''}
-                ${canComplete ? `
-                    <button type="button" class="dashboard-planned-task-btn complete" data-ts-action="complete-task" data-plan-id="${actionPlanId}" data-task-index="${actionTaskIndex}" data-user-id="${actionUserId}">
-                        <i class="fa-solid fa-check"></i><span>Complete</span>
-                    </button>
-                ` : ''}
+                ${canPostpone ? `<button type="button" class="dashboard-planned-task-btn postpone" data-ts-action="postpone-task" data-plan-id="${escapeJsSingleQuote(row.planId)}" data-task-index="${row.taskIndex}" data-plan-scope="${safeHtml(row.planScope)}" data-user-id="${escapeJsSingleQuote(row.userId)}" data-date="${escapeJsSingleQuote(row.date)}">
+                    <i class="fa-solid fa-clock"></i><span>Postpone</span>
+                </button>` : ''}
+                ${canComplete ? `<button type="button" class="dashboard-planned-task-btn complete" data-ts-action="complete-task" data-plan-id="${escapeJsSingleQuote(row.planId)}" data-task-index="${row.taskIndex}" data-user-id="${escapeJsSingleQuote(row.userId)}">
+                    <i class="fa-solid fa-check"></i><span>Complete</span>
+                </button>` : ''}
             </div>
         </div>
     `;
@@ -185,16 +170,15 @@ const ensurePlannedTaskInteractions = () => {
     plannedTaskInteractionsBound = true;
 
     const closeAll = (exceptEl = null) => {
-        document.querySelectorAll('.dashboard-planned-task-item.is-action-open').forEach((item) => {
-            if (item !== exceptEl) item.classList.remove('is-action-open');
+        document.querySelectorAll('.dashboard-planned-task-item.is-action-open').forEach((el) => {
+            if (el !== exceptEl) el.classList.remove('is-action-open');
         });
     };
 
-    // Register dashboard actions with shared router (once).
     if (!window._dashboardActionRegistered) {
         window._dashboardActionRegistered = true;
         onAction('edit-task', (el) => window.app_editDashboardActivity?.('plan', '', el.dataset.date || '', el.dataset.userId || '', ''));
-        onAction('postpone-task', (el) => window.app_teamActivitiesPostponeTask?.(el));
+        onAction('postpone-task', (el) => window.app_openPostponeModal?.(el.dataset.planId, Number(el.dataset.taskIndex)));
         onAction('complete-task', (el) => window.app_teamActivitiesCompleteTask?.(el));
         onAction('refresh-hero', (el, e) => window.app_forceRefreshHero?.(e));
         onAction('close-modal', (el) => {
@@ -210,52 +194,38 @@ const ensurePlannedTaskInteractions = () => {
     }
 
     document.addEventListener('click', (event) => {
-        const actionBtn = event.target?.closest?.('.dashboard-planned-task-btn');
-        if (actionBtn) return;
+        if (event.target?.closest?.('.dashboard-planned-task-btn')) return;
         const item = event.target?.closest?.('.dashboard-planned-task-item');
-        if (!item) {
-            closeAll();
-            return;
-        }
+        if (!item) { closeAll(); return; }
         item.classList.toggle('is-action-open');
-        if (item.classList.contains('is-action-open')) {
-            closeAll(item);
-        }
+        if (item.classList.contains('is-action-open')) closeAll(item);
     });
 
     document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') {
-            closeAll();
-            return;
-        }
+        if (event.key === 'Escape') { closeAll(); return; }
         const item = event.target?.closest?.('.dashboard-planned-task-item');
         if (!item) return;
         if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault();
             item.classList.toggle('is-action-open');
-            if (item.classList.contains('is-action-open')) {
-                closeAll(item);
-            }
+            if (item.classList.contains('is-action-open')) closeAll(item);
         }
     });
 };
 
 export function renderPlannedTasksCard(workPlans, targetStaff = null, options = {}) {
     ensurePlannedTaskInteractions();
-    const todayKey = String(options.from || options.to || getDashboardTodayIso() || '').trim() || getDashboardTodayIso();
-    const fromKey = String(options.from || todayKey).trim() || todayKey;
-    const toKey = String(options.to || todayKey).trim() || todayKey;
     const currentUser = window.AppAuth?.getUser?.() || null;
+    const today = getDashboardTodayIso();
+    const fromKey = String(options.from || today).trim() || today;
+    const toKey = String(options.to || today).trim() || today;
     const targetUserId = String(options.targetStaffId || targetStaff?.id || currentUser?.id || '').trim();
     const targetStaffName = String(options.targetStaffName || targetStaff?.name || currentUser?.name || 'Staff');
     const title = String(options.title || "Today's Planned Tasks").trim();
-    const _subtitle = String(options.subtitle || `${fromKey}${fromKey === toKey ? '' : ` to ${toKey}`}`).trim();
     const emptyMessage = String(options.emptyMessage || 'No planned tasks found.').trim();
-    const filteredRows = normalizeDashboardPlannedTaskRows(workPlans, targetUserId, fromKey, toKey);
-    const _total = filteredRows.length;
-    const _completed = filteredRows.filter((row) => String(row.status || '').toLowerCase() === 'completed').length;
-    const _open = filteredRows.filter((row) => row.isActionable).length;
+    const rows = getPlannedTaskRows(workPlans, targetUserId, fromKey, toKey, currentUser?.id || '');
     const isAdmin = !!(currentUser && window.app_hasPerm?.('dashboard', 'admin', currentUser));
+    const viewerId = String(currentUser?.id || '');
     const cardClass = String(options.cardClass || 'dashboard-worklog-card').trim() || 'dashboard-worklog-card';
     const listClass = String(options.listClass || 'dashboard-planned-task-list').trim() || 'dashboard-planned-task-list';
 
@@ -267,8 +237,8 @@ export function renderPlannedTasksCard(workPlans, targetStaff = null, options = 
                 </div>
             </div>
             <div class="${safeHtml(listClass)}">
-                ${filteredRows.length
-                    ? filteredRows.map((row, index) => renderPlannedTaskItem(row, index, targetUserId, isAdmin)).join('')
+                ${rows.length
+                    ? rows.map((row, i) => renderPlannedTaskItem(row, i, viewerId, isAdmin)).join('')
                     : `<div class="dashboard-activity-empty">${safeHtml(emptyMessage)}</div>`}
             </div>
         </div>
@@ -785,6 +755,11 @@ export function renderHeroCard(heroData, heroMeta = {}) {
     const periodLabel = heroData?.period === 'yesterday_back_7_days'
         ? 'Last 7 Completed Days'
         : 'Weekly';
+    const usedFallbackWindow = !!(heroData?.meta?.usedFallbackWindow);
+    const heroWindowDays = Math.max(7, Number(heroData?.meta?.windowDays || 0));
+    const fallbackBadgeHTML = usedFallbackWindow
+        ? `<span class="dashboard-kpi-tag hero-fallback-badge" title="No staff met the minimum hero criteria in the standard window, so the ranking was automatically widened to ${heroWindowDays} days.">Extended window</span>`
+        : '';
 
     return `
         <div class="card dashboard-hero-stats-card hero-slot ${isNew ? 'is-new-summary' : ''}">
@@ -834,6 +809,7 @@ export function renderHeroCard(heroData, heroMeta = {}) {
             <div class="dashboard-hero-stats-foot">
                 <span class="dashboard-kpi-tag">${safeHtml(periodLabel)}</span>
                 <span class="dashboard-kpi-tag">Confidence ${confidencePct}%</span>
+                ${fallbackBadgeHTML}
                 <span class="hero-version-badge" title="Hero Calculation Algorithm Version">v5</span>
             </div>
         </div>`;
@@ -842,7 +818,6 @@ export function renderHeroCard(heroData, heroMeta = {}) {
 export function renderWorkLog(workPlans, _collabs = [], targetStaff = null, _minutes = [], options = {}) {
     return renderPlannedTasksCard(workPlans, targetStaff, {
         title: options.title || "Today's Planned Tasks",
-        subtitle: options.subtitle || 'From team activities',
         from: options.from || getDashboardTodayIso(),
         to: options.to || getDashboardTodayIso(),
         emptyMessage: options.emptyMessage || 'No planned tasks for today.',
@@ -1098,9 +1073,13 @@ function renderHeroTaskDetailsModalContent(userRow, bucketKey) {
             : '';
         const completedDate = task.completedDate ? `<span class="hero-task-item-chip">Completed ${safeHtml(task.completedDate)}</span>` : '';
         const rawStatus = task.rawStatus ? `<span class="hero-task-item-chip">Status ${safeHtml(task.rawStatus)}</span>` : '';
+        const ownerPlanChip = (task.ownerId && String(task.ownerId) !== String(user.id || '') && task.ownerName)
+            ? `<span class="hero-task-item-chip">From ${safeHtml(task.ownerName)}&rsquo;s plan</span>`
+            : '';
         const safeUserId = escapeJsSingleQuote(String(user.id || ''));
         const safePlanId = escapeJsSingleQuote(String(task.planId || ''));
         const safeTaskDate = escapeJsSingleQuote(String(task.date || ''));
+        const safeOwnerId = escapeJsSingleQuote(String(task.ownerId || user.id || ''));
         const safeBucketKey = escapeJsSingleQuote(String(bucketKey || ''));
         const actionButtons = !canManageHeroTasks
             ? ''
@@ -1132,13 +1111,14 @@ function renderHeroTaskDetailsModalContent(userRow, bucketKey) {
                     ${subPlans}
                     <div class="hero-task-item-meta">
                         <span class="hero-task-item-chip">${safeHtml(task.date || '--')}</span>
+                        ${ownerPlanChip}
                         ${rawStatus}
                         ${completedDate}
                     </div>
                 </div>
                 ${canManageHeroTasks ? `
                     <div class="hero-task-item-actions">
-                        <button type="button" class="action-btn secondary" onclick="window.app_editHeroTaskAction('${safeTaskDate}','${safeUserId}')">Edit Plan</button>
+                        <button type="button" class="action-btn secondary" onclick="window.app_editHeroTaskAction('${safeTaskDate}','${safeOwnerId}')">Edit Plan</button>
                         ${actionButtons}
                     </div>
                 ` : ''}
@@ -2052,6 +2032,28 @@ export async function renderDashboard() {
         }, 500);
     }
 
+
+    // If the daily summary served a stale/fallback doc (e.g. yesterday's), the mini card
+    // may show old data. Patch it from the live leaderboard once after render so the card
+    // and the audit table always reflect the current window.
+    const isStaleHeroSource = heroData != null && String(heroMeta.source || '').startsWith('fallback');
+    if (isStaleHeroSource) {
+        setTimeout(() => {
+            if (window.app_refreshHeroAuditLive) {
+                window.app_refreshHeroAuditLive({}).then(() => {
+                    // Allow async Firestore listeners / global updates to settle before
+                    // reading app_dashboardHeroData / app_dashboardHeroMeta.
+                    return new Promise((r) => setTimeout(r, 250));
+                }).then(() => {
+                    const slot = document.querySelector('.hero-slot');
+                    if (slot) {
+                        slot.outerHTML = renderHeroCard(window.app_dashboardHeroData, window.app_dashboardHeroMeta || {});
+                        setTimeout(() => { initDashboardCardControls(); attachHeroCardHandlers(); }, 0);
+                    }
+                }).catch(() => {});
+            }
+        }, 1000);
+    }
 
     // If heroData is null (summary still generating), wait for it and patch when ready
     if (heroData == null && sharedSummaryTask) {
@@ -3031,7 +3033,15 @@ if (typeof window !== 'undefined') {
         if (!window.app_requireHeroTaskManagePermission?.(userId)) return;
         const modalId = 'postpone-task-modal';
         document.getElementById(modalId)?.remove();
-        const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+        let tomorrow = '';
+        try {
+            const istNow = window.AppDB?.getIstNow ? window.AppDB.getIstNow() : new Date();
+            const tmr = new Date(istNow);
+            tmr.setDate(tmr.getDate() + 1);
+            tomorrow = window.AppDB?.toDateKey ? window.AppDB.toDateKey(tmr) : `${tmr.getFullYear()}-${String(tmr.getMonth() + 1).padStart(2, '0')}-${String(tmr.getDate()).padStart(2, '0')}`;
+        } catch {
+            tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+        }
         const html = `
             <div class="modal-overlay" id="${modalId}">
                 <div class="modal-content postpone-modal-content">
@@ -3055,6 +3065,12 @@ if (typeof window !== 'undefined') {
         const targetDate = document.getElementById('hero-postpone-date-input')?.value;
         if (!targetDate) {
             alert('Please select a date.');
+            return;
+        }
+        const plan = await window.AppDB?.get('work_plans', planId).catch(() => null);
+        const fromDate = plan?.date || '';
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate) || (fromDate && targetDate <= fromDate)) {
+            alert('Postpone date must be after the source date.');
             return;
         }
         document.getElementById('postpone-task-modal')?.remove();

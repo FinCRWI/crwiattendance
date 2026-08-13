@@ -16,3 +16,4 @@ public/version.json
 .env.test.local
 .env.production.local
 _screenshots/
+.freebuff/*.db*
