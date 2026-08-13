@@ -101,7 +101,21 @@ const getPlannedTaskRows = (workPlans, userId, fromKey, toKey, viewerId = '') =>
             if (!task || task.isRemoved === true) return;
             // Private tasks are visible only to the plan owner or the assignee.
             if (!isTaskVisibleToViewer(task, String(plan.userId || ''), String(viewerId || ''))) return;
-            const status = normalizeTaskStatus(task, planDate, window.AppCalendar?.getSmartTaskStatus);
+            let status = normalizeTaskStatus(task, planDate, window.AppCalendar?.getSmartTaskStatus);
+            const rawTaskStatus = String(task.status || '').toLowerCase().trim();
+            const isPostponedAlias = rawTaskStatus === 'postponed' || rawTaskStatus === 'not-completed' || rawTaskStatus === 'not completed';
+            // A postponed copy that has arrived (due today or earlier) is a normal
+            // task for that day, not a stale "postponed" item cluttering the widget.
+            const isArrivedPostponedCopy = isPostponedAlias
+                && (String(task.addedFrom || '').toLowerCase() === 'postponed' || !!task.postponedFromDate)
+                && planDate <= getDashboardTodayIso();
+            if (isArrivedPostponedCopy) {
+                status = planDate === getDashboardTodayIso() ? 'in-process' : 'overdue';
+            }
+            // A task postponed to a future day belongs to that day — not today's widget.
+            if (isPostponedAlias && task.postponedToDate && String(task.postponedToDate).trim() > getDashboardTodayIso()) {
+                return;
+            }
             if (!isActionablePlannedTaskStatus(status)) return;
             rows.push({
                 date: planDate,

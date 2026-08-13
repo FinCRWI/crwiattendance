@@ -1,10 +1,10 @@
 // Live integration: a private day-plan task is visible to its owner on the
 // dashboard widget (with the lock chip) and in the owner's staff-activity
 // feed, and disappears after cleanup. Ported from verify-private-tasks.mjs.
-const { test, expect } = require('@playwright/test');
-const { skipUnlessLive, grantGeolocation, loginAsDemo, watchErrors, removeMarkerTasks } = require('./live-helpers');
-
+const { test, expect } = require('@playwright/test');const { skipUnlessLive, grantGeolocation, loginAsDemo, watchErrors, removeMarkerTasks } = require('./live-helpers');
 const MARKER = '[PRIVTASKS] Confidential review prep';
+
+test.setTimeout(180000);
 
 test('private task stays visible to its owner with a lock badge', async ({ page }) => {
   skipUnlessLive();

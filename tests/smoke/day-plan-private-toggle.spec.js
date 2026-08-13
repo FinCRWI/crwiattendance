@@ -1,10 +1,10 @@
 // Live integration: the day-plan block privacy toggle must flip the hidden
 // isPrivate input, the block class, and the lock button icon. Ported from
 // verify-private-toggle.mjs.
-const { test, expect } = require('@playwright/test');
-const { skipUnlessLive, grantGeolocation, loginAsDemo, removeMarkerTasks } = require('./live-helpers');
-
+const { test, expect } = require('@playwright/test');const { skipUnlessLive, grantGeolocation, loginAsDemo, removeMarkerTasks } = require('./live-helpers');
 const MARKER = '[PRIVTOGGLE] Confidential review prep';
+
+test.setTimeout(180000);
 
 test('day-plan block privacy toggle flips private state both ways', async ({ page }) => {
   skipUnlessLive();

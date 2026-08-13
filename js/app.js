@@ -963,6 +963,10 @@ window.app_openMissedCheckoutTaskReconciliation = async ({ logId, date }) => {
                         detailState.progressPercent = 100;
                         detailState.progressStatus = 'done';
                     }
+                    if (actionValue === 'postpone' && !detailState.actionMeta?.postponeDate) {
+                        detailState.actionMeta = detailState.actionMeta || {};
+                        detailState.actionMeta.postponeDate = app_getPostponeDefaultDate();
+                    }
                 }
                 if (window.app_checkoutTaskActions && actionValue) {
                     window.app_checkoutTaskActions[actionKey] = actionValue;
@@ -975,7 +979,7 @@ window.app_openMissedCheckoutTaskReconciliation = async ({ logId, date }) => {
                 rows.push(`
                     <div class="checkout-task-row">
                         <div class="checkout-task-copy">
-                            <div class="checkout-task-title">${window.app_formatTaskWithPostponeChip(text)}</div>
+                            <div class="checkout-task-title">${window.app_formatTaskWithPostponeChip(text)}${window.app_checkoutPostponeChip(p)}</div>
                             <div class="checkout-task-status">Status: ${statusLabel}</div>
                         </div>
                         <div class="checkout-task-controls">
@@ -5328,7 +5332,7 @@ window.app_renderCheckoutActionPreview = () => {
                     : detail.action;
         let extra = '';
         if (detail.action === 'postpone') {
-            const date = app_normalizeIsoDate(detail.actionMeta?.postponeDate) || '--';
+            const date = app_normalizeIsoDate(detail.actionMeta?.postponeDate) || app_getPostponeDefaultDate();
             const reason = String(detail.actionMeta?.postponeReason || '').trim();
             extra = `New date: ${app_escapeHtml(date)}${reason ? ` • Reason: ${app_escapeHtml(reason)}` : ''}`;
         }
@@ -5574,6 +5578,12 @@ window.app_saveDayPlan = async (e, date, targetUserId = null) => {
     const planIdsByScope = {};
     let validationError = '';
 
+    // 'postponed' / legacy 'not-completed' alias. Tasks newly marked postponed
+    // via the editor get a next-day copy (like the checkout postpone flow).
+    const isPostponedStatus = (s) => ['postponed', 'not-completed', 'not completed'].includes(String(s || '').toLowerCase().trim());
+    const postponeTargetDate = app_getPostponeDefaultDate();
+    const newlyPostponed = [];
+
     planBlocks.forEach(block => {
         const task = block.querySelector('.plan-task').value.trim();
         const subPlanInputs = block.querySelectorAll('.sub-plan-input');
@@ -5606,6 +5616,9 @@ window.app_saveDayPlan = async (e, date, targetUserId = null) => {
         const budgetHeadId = String(budgetHeadSelect?.value || currentUser.currentBudgetHeadId || 'UNALLOCATED');
         const isPrivate = block.querySelector('.plan-private')?.value === '1';
         const sourcePlanId = block.querySelector('.plan-source-plan-id')?.value || '';
+        // Provenance (postpone/carry-forward metadata) must survive the edit+
+        // save round-trip, otherwise it gets silently dropped.
+        const provenance = (window.app_deserializeTaskProvenance?.(block.querySelector('.plan-provenance')?.value || '') || {});
 
         if (task) {
             if ((startDate && !endDate) || (!startDate && endDate)) {
@@ -5619,6 +5632,7 @@ window.app_saveDayPlan = async (e, date, targetUserId = null) => {
             const taskStartDate = startDate || date;
             const taskEndDate = endDate || date;
             const planPayload = {
+                ...provenance,
                 task,
                 subPlans,
                 tags,
@@ -5635,6 +5649,13 @@ window.app_saveDayPlan = async (e, date, targetUserId = null) => {
                 assignedFromPlanId: sourcePlanId || null,
                 isPrivate
             };
+            // Newly marked postponed (was not postponed before this save): schedule
+            // a copy for tomorrow so "Postponed" really moves the task to the next
+            // day, and tag the source with its target date.
+            if (taskScope === 'personal' && isPostponedStatus(planPayload.status) && !isPostponedStatus(provenance._originalStatus)) {
+                planPayload.postponedToDate = postponeTargetDate;
+                newlyPostponed.push({ payload: planPayload, blockIndex });
+            }
             plans.push(planPayload);
             if (taskScope === 'annual') annualPlans.push(planPayload);
             else {
@@ -5769,6 +5790,35 @@ window.app_saveDayPlan = async (e, date, targetUserId = null) => {
             });
 
             await Promise.all(writePromises);
+
+            // Tasks newly marked 'postponed' in this save: create a next-day copy
+            // (same behaviour as the checkout postpone flow) so the task shows up
+            // again automatically on its new date.
+            if (newlyPostponed.length > 0) {
+                const sourcePersonalPlanId = window.AppCalendar.getWorkPlanId(date, targetId, 'personal');
+                await Promise.all(newlyPostponed.map(async ({ payload }) => {
+                    try {
+                        const assigneeId = String(payload.assignedTo || targetId || '').trim() || targetId;
+                        const details = (payload.subPlans && payload.subPlans.length) ? ` - ${payload.subPlans.join(', ')}` : '';
+                        const cleanedText = String(payload.task || '').replace(/\s*\(Postponed from [^)]+\)\s*$/i, '');
+                        const postponedText = `${cleanedText}${details} (Postponed from ${date})`;
+                        await window.AppCalendar.addWorkPlanTask(postponeTargetDate, assigneeId, postponedText, [], {
+                            addedFrom: 'postponed',
+                            sourcePlanId: sourcePersonalPlanId,
+                            sourceTaskIndex: Number.isFinite(payload.assignedFromTaskIndex) ? payload.assignedFromTaskIndex : null,
+                            postponedFromDate: date,
+                            status: 'postponed',
+                            assignedTo: assigneeId,
+                            assignedToName: payload.assignedToName || '',
+                            budgetHeadId: payload.budgetHeadId || 'UNALLOCATED',
+                            tags: Array.isArray(payload.tags) ? payload.tags.slice() : [],
+                            postponedToDate: postponeTargetDate
+                        });
+                    } catch (err) {
+                        console.warn('[DayPlan] Failed to create postponed copy for task:', payload.task, err);
+                    }
+                }));
+            }
 
             // Remove stale copies of this owner's tasks from assignees who did NOT
             // receive a re-save this round (unassigned, deleted, or moved elsewhere).
@@ -6155,6 +6205,14 @@ window.app_postponeTask = async (planId, taskIndex, targetDate) => {
         }
         const freshTask = plan.plans[taskIndex];
         await window.AppCalendar.updateTaskStatus(planId, taskIndex, 'postponed');
+        // Record the target date on the source so the widget/checkout can label
+        // the task as moved (and the widget stops showing it as a today task).
+        const sourcePatch = await window.AppDB.get('work_plans', planId).catch(() => null);
+        if (sourcePatch && sourcePatch.plans?.[taskIndex]) {
+            sourcePatch.plans[taskIndex].postponedToDate = targetDate;
+            sourcePatch.updatedAt = new Date().toISOString();
+            await window.AppDB.put('work_plans', sourcePatch).catch(() => null);
+        }
         const details = (freshTask && freshTask.subPlans && freshTask.subPlans.length) ? ` - ${freshTask.subPlans.join(', ')}` : '';
         const text = freshTask ? `${freshTask.task}${details}` : '';
         const assigneeId = String(freshTask.assignedTo || ownerUserId || '').trim() || ownerUserId;
@@ -6271,6 +6329,15 @@ window.app_formatTaskWithPostponeChip = function (text) {
     const base = match[1].trim();
     const fromDate = match[2].trim();
     return `${base} <span class="postponed-source-chip">Postponed from ${fromDate}</span>`;
+};
+
+// Shows where a postponed task was moved to/from, e.g. "Postponed to 2026-08-14"
+// on the source task (postponedToDate) or "Postponed from 2026-08-13" on the
+// next-day copy (postponedFromDate / addedFrom === 'postponed'). The target
+// date is stored on the source by every postpone path (checkout, postpone
+// modal, day-plan editor); the copy records where it came from.
+window.app_checkoutPostponeChip = function (task) {
+    return window.app_formatPostponeChip ? window.app_formatPostponeChip(task) : '';
 };
 
 window.app_appendCompletedTaskToSummary = async function (planId, taskIndex) {
@@ -6978,7 +7045,7 @@ window.app_prepareCheckoutOvertimeSection = async (user) => {
     
     // Reset radio buttons
     document.querySelectorAll('input[name="extraTimeMode"]').forEach(radio => {
-        radio.checked = radio.value === 'full';
+        radio.checked = radio.value === 'partial';
     });
     
     // Hide partial time container
@@ -7026,6 +7093,26 @@ window.app_prepareCheckoutOvertimeSection = async (user) => {
         
         section.style.display = 'block';
         firstTextarea.required = true;
+        // Partial is the default selection — show the slider container immediately.
+        const partialContainer = document.getElementById('checkout-partial-time-container');
+        if (partialContainer) partialContainer.style.display = 'block';
+
+        // --- Notification: banner + auto-scroll + highlight ---
+        const banner = document.getElementById('checkout-extra-time-banner');
+        const bannerText = document.getElementById('checkout-extra-time-banner-text');
+        if (banner) {
+            if (bannerText) {
+                bannerText.textContent = `You worked ${extraHours}h ${extraMinutes}m extra — please review the confirmation section below.`;
+            }
+            banner.style.display = 'flex';
+        }
+        // Auto-scroll the extra time section into view after a short delay
+        // so the user sees it immediately when the checkout form opens.
+        setTimeout(() => {
+            section.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            section.classList.add('extra-time-highlight');
+            setTimeout(() => section.classList.remove('extra-time-highlight'), 2200);
+        }, 350);
     } catch (err) {
         console.warn('[Extra Time Debug] Extra time prompt check failed:', err);
     }
@@ -7346,6 +7433,10 @@ async function handleAttendance() {
                                         detailState.progressPercent = 100;
                                         detailState.progressStatus = 'done';
                                     }
+                                    if (actionValue === 'postpone' && !detailState.actionMeta?.postponeDate) {
+                                        detailState.actionMeta = detailState.actionMeta || {};
+                                        detailState.actionMeta.postponeDate = app_getPostponeDefaultDate();
+                                    }
                                 }
                                 if (window.app_checkoutTaskActions) {
                                     if (actionValue) window.app_checkoutTaskActions[actionKey] = actionValue;
@@ -7358,7 +7449,7 @@ async function handleAttendance() {
                                 return `
                                         <div class="checkout-task-row">
                                             <div class="checkout-task-copy">
-                                                <div class="checkout-task-title">${window.app_formatTaskWithPostponeChip(text)}</div>
+                                                <div class="checkout-task-title">${window.app_formatTaskWithPostponeChip(text)}${window.app_checkoutPostponeChip(p)}</div>
                                                 <div class="checkout-task-status">Status: ${statusLabel}</div>
                                             </div>
                                             <div class="checkout-task-controls">

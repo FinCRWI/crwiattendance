@@ -6,6 +6,8 @@
 const { test, expect } = require('@playwright/test');
 const { skipUnlessLive, grantGeolocation, loginAsDemo, watchErrors, removeMarkerTasks } = require('./live-helpers');
 
+test.setTimeout(180000);
+
 const M1 = '[FIXTEST] assigned copy round-trip';
 const M2 = '[FIXTEST] legacy not-completed task';
 

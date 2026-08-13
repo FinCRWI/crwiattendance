@@ -3,6 +3,7 @@ import { AppDB } from './db.js';
 import { AppCalendar } from './calendar.js';
 import { AppConfig } from '../config.js';
 import { isTaskVisibleToViewer } from '../utils/task-visibility.js';
+import { serializeTaskProvenance, deserializeTaskProvenance, formatPostponeChip } from '../utils/task-provenance.js';
 
 const DAY_PLAN_OVERLAY_BASE_Z_INDEX = 10060;
 const DAY_PLAN_OVERLAY_STEP = 20;
@@ -11,9 +12,7 @@ let activeDayPlanRequestId = 0;
 const activeDayPlanLayers = new Set();
 const dayPlanLayerReleases = new WeakMap();
 const DAY_PLAN_LOAD_TTL_MS = 300000;
-const dayPlanLoadCache = new Map();
-
-if (typeof window !== 'undefined' && !window.__dayPlanLoadCacheBound) {
+const dayPlanLoadCache = new Map();    if (typeof window !== 'undefined' && !window.__dayPlanLoadCacheBound) {
     window.addEventListener('app:db-write', (event) => {
         const collection = String(event?.detail?.collection || '');
         if (collection === 'work_plans' || collection === 'users') {
@@ -21,6 +20,10 @@ if (typeof window !== 'undefined' && !window.__dayPlanLoadCacheBound) {
         }
         if (collection === 'work_plans') {
             dayPlanMaintenanceDone.clear();
+            // A save changed the plans on disk — drop the 5-minute prefetch
+            // snapshot so the next modal open shows the saved data, not the
+            // pre-save one (previously stale for up to DAY_PLAN_PREFETCH_TTL_MS).
+            dayPlanPrefetchCache.clear();
         }
     });
     window.__dayPlanLoadCacheBound = true;
@@ -424,6 +427,11 @@ function createDayPlanHeader(date, isEditingOther, headerName, hasAnyExistingPla
 function createDayPlanForm(date, targetId, personalWorkPlan, annualWorkPlan, initialBlocks, allUsers, defaultScope, selectableCollaborators, isAdmin, currentUser, uiOptions = {}) {
     const personalOnly = uiOptions?.personalOnly === true;
     const batchSize = 4;
+    // Shared/reference blocks are few on a normal day (measured: ~2ms to build
+    // 19, ~16ms for 200). Render the whole Shared Plans column at once below
+    // this threshold so plans never appear "missing"; lazy-loading (scroll /
+    // Load more) still kicks in only for unusually large lists.
+    const SHARED_FULL_RENDER_THRESHOLD = 60;
     const scopeBuckets = {
         personal: [],
         annual: [],
@@ -753,11 +761,11 @@ function createDayPlanForm(date, targetId, personalWorkPlan, annualWorkPlan, ini
             loadMoreIntoScope('annual');
         }
     });
-    loadMoreFallback.style.display = (scopeBuckets.personal.length > batchSize || scopeBuckets.annual.length > batchSize) ? 'inline-flex' : 'none';
+    loadMoreFallback.style.display = (scopeBuckets.personal.length > batchSize || scopeBuckets.annual.length > SHARED_FULL_RENDER_THRESHOLD) ? 'inline-flex' : 'none';
     footer.appendChild(createElement('div', { className: 'day-plan-load-more-wrap', children: [loadMoreFallback] }));
 
     renderBatch('personal', false);
-    renderBatch('annual', false);
+    renderBatch('annual', scopeBuckets.annual.length <= SHARED_FULL_RENDER_THRESHOLD);
 
     return form;
 }
@@ -1284,6 +1292,7 @@ export function dayPlanRenderBlockV3(args) {
         <input class="plan-removed-flag" value="${plan.isRemoved === true ? '1' : '0'}">
         <input class="plan-private" value="${plan.isPrivate === true ? '1' : '0'}">
         <input class="plan-source-plan-id" value="${esc(plan.assignedFromPlanId || '')}">
+        <input class="plan-provenance" type="hidden" value="${esc(serializeTaskProvenance(plan, { _originalStatus: plan._originalStatus !== undefined ? plan._originalStatus : (plan.status || '') }))}">
     `;
     if (plan.subPlans) {
         plan.subPlans.forEach(s => {
@@ -1413,7 +1422,14 @@ export function app_extractBlockData(block) {
         status: c.dataset.status
     }));
 
-    return { task, status, planScope, budgetHeadId, assignedTo, assignedToName, startDate, endDate, subPlans, tags, carryForwardRootId, isRemoved, isPrivate, assignedFromPlanId };
+    // Preserve postpone/carry-forward provenance so an edit+save never drops it.
+    const provenance = deserializeTaskProvenance(block.querySelector('.plan-provenance')?.value || '');
+
+    return {
+        ...provenance,
+        task, status, planScope, budgetHeadId, assignedTo, assignedToName, startDate, endDate,
+        subPlans, tags, carryForwardRootId, isRemoved, isPrivate, assignedFromPlanId
+    };
 }
 
 export function togglePlanBlockPrivate(trigger) {
@@ -1756,6 +1772,9 @@ const AppDayPlan = {
 };
 
 window.AppDayPlan = AppDayPlan;
+window.app_serializeTaskProvenance = serializeTaskProvenance;
+window.app_deserializeTaskProvenance = deserializeTaskProvenance;
+window.app_formatPostponeChip = formatPostponeChip;
 window.app_openDayPlan = openDayPlan;
 window.app_dayPlanRenderBlockV3 = dayPlanRenderBlockV3;
 window.app_addPlanBlockUI = addPlanBlockUI;

@@ -46,6 +46,9 @@ describe('checkout-task-updates', () => {
         );
 
         assert.equal(result.nextTask.status, 'postponed');
+        // The source task records where it was moved to so the widget/checkout
+        // can label it and stop showing it as a today task.
+        assert.equal(result.nextTask.postponedToDate, '2026-08-02');
         assert.equal(result.postponedTask.date, '2026-08-02');
         assert.equal(result.postponedTask.taskDescription, 'Call vendor - Follow up (Postponed from 2026-07-30)');
         assert.equal(result.postponedTask.meta.addedFrom, 'postponed');
@@ -55,7 +58,31 @@ describe('checkout-task-updates', () => {
         assert.equal(result.postponedTask.meta.status, 'postponed');
         assert.equal(result.postponedTask.meta.assignedTo, 'u1');
         assert.equal(result.postponedTask.meta.assignedToName, '');
+        assert.equal(result.postponedTask.meta.postponedToDate, '2026-08-02');
         assert.deepEqual(result.postponedTask.meta.tags, [{ id: 't1', name: 'Urgent' }]);
+    });
+
+    it('does not mark the source postponed when the postpone date is invalid', () => {
+        const result = buildCheckoutTaskMutation(
+            { task: 'Call vendor', status: 'pending', budgetHeadId: 'OPS' },
+            {
+                action: 'postpone',
+                progressPercent: 0,
+                progressStatus: 'waiting',
+                progressNote: '',
+                budgetHeadId: 'OPS',
+                actionMeta: { postponeDate: '2026-07-30', postponeReason: '' },
+                planId: 'plan_1',
+                taskIndex: 3,
+                timestamp: '2026-07-30T10:00:00.000Z'
+            },
+            { effectiveDate: '2026-07-30', currentUserId: 'u1', planDate: '2026-07-30' }
+        );
+
+        assert.equal(result.postponedTask, null);
+        assert.equal(result.nextTask.status, 'pending');
+        assert.equal(result.nextTask.postponedToDate, undefined);
+        assert.ok(result.postponeError);
     });
 
     it('returns postponeError when postpone date is not after source date', () => {

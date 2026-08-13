@@ -26,18 +26,21 @@ export function buildCheckoutTaskMutation(task = {}, update = {}, options = {}) 
         lastCheckoutAction: update.action
     };
 
-    if (update.action === 'complete') {
-        nextTask.status = 'completed';
-        if (!nextTask.completedDate) nextTask.completedDate = effectiveDate;
-    } else if (update.action === 'postpone') {
-        nextTask.status = 'postponed';
-    }
-
     const postponeDate = update.action === 'postpone'
         ? normalizeIsoDate(update.actionMeta?.postponeDate)
         : '';
     const canCreatePostponedCopy = postponeDate && postponeDate > planDate;
     let postponeError = '';
+    if (update.action === 'complete') {
+        nextTask.status = 'completed';
+        if (!nextTask.completedDate) nextTask.completedDate = effectiveDate;
+    } else if (update.action === 'postpone') {
+        nextTask.status = 'postponed';
+        // Record the target date on the source so the widget/checkout can label
+        // the task as moved (and the widget can stop showing it as a today task).
+        if (canCreatePostponedCopy) nextTask.postponedToDate = postponeDate;
+    }
+
     if (update.action === 'postpone' && !canCreatePostponedCopy) {
         nextTask.status = task.status || '';
         nextTask.lastCheckoutAction = '';
@@ -60,7 +63,8 @@ export function buildCheckoutTaskMutation(task = {}, update = {}, options = {}) 
                 tags: Array.isArray(task.tags) ? task.tags.slice() : [],
                 status: 'postponed',
                 assignedTo: String(task.assignedTo || currentUserId || '').trim() || currentUserId,
-                assignedToName: String(task.assignedToName || '').trim()
+                assignedToName: String(task.assignedToName || '').trim(),
+                postponedToDate: postponeDate
             }
         }
         : null;

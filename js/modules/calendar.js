@@ -501,6 +501,20 @@ export class Calendar {
                 existing.endDate = meta.endDate || existing.endDate || existing.startDate || date;
                 existing.assignedTo = meta.assignedTo || existing.assignedTo || userId;
                 existing.assignedToName = meta.assignedToName || existing.assignedToName || workPlan.userName || '';
+                existing.addedFrom = meta.addedFrom || existing.addedFrom || 'minutes';
+                existing.sourcePlanId = meta.sourcePlanId || existing.sourcePlanId || null;
+                existing.sourceTaskIndex = meta.sourceTaskIndex ?? existing.sourceTaskIndex ?? null;
+                existing.postponedFromDate = meta.postponedFromDate || existing.postponedFromDate || null;
+                existing.postponedToDate = meta.postponedToDate || existing.postponedToDate || null;
+                existing.postponedFromPlanId = meta.postponedFromPlanId || existing.postponedFromPlanId || null;
+                existing.carriedForwardFromDate = meta.carriedForwardFromDate || existing.carriedForwardFromDate || null;
+                existing.carriedForwardFromPlanId = meta.carriedForwardFromPlanId || existing.carriedForwardFromPlanId || null;
+                existing.isAutoForwarded = meta.isAutoForwarded === true || existing.isAutoForwarded === true;
+                existing.carryForwardPolicy = meta.carryForwardPolicy || existing.carryForwardPolicy || null;
+                existing.carryForwardReason = meta.carryForwardReason || existing.carryForwardReason || null;
+                existing.progressPercent = Number.isFinite(Number(meta.progressPercent)) ? Number(meta.progressPercent) : (existing.progressPercent ?? null);
+                existing.progressStatus = meta.progressStatus || existing.progressStatus || null;
+                existing.progressNote = meta.progressNote || existing.progressNote || null;
                 existing.updatedAt = new Date().toISOString();
                 workPlan.updatedAt = new Date().toISOString();
                 const saved = await this.db.put('work_plans', workPlan);
@@ -523,7 +537,21 @@ export class Calendar {
             taggedById: meta.taggedById || null,
             taggedByName: meta.taggedByName || null,
             assignedTo: meta.assignedTo || userId,
-            assignedToName: meta.assignedToName || workPlan.userName || ''
+            assignedToName: meta.assignedToName || workPlan.userName || '',
+            // Preserve postpone/carry-forward provenance so copies created here
+            // keep their metadata (previously dropped silently).
+            postponedFromDate: meta.postponedFromDate || null,
+            postponedToDate: meta.postponedToDate || null,
+            postponedFromPlanId: meta.postponedFromPlanId || null,
+            carriedForwardFromDate: meta.carriedForwardFromDate || null,
+            carriedForwardFromPlanId: meta.carriedForwardFromPlanId || null,
+            isAutoForwarded: meta.isAutoForwarded === true,
+            carryForwardPolicy: meta.carryForwardPolicy || null,
+            carryForwardReason: meta.carryForwardReason || null,
+            progressPercent: Number.isFinite(Number(meta.progressPercent)) ? Number(meta.progressPercent) : null,
+            progressStatus: meta.progressStatus || null,
+            progressNote: meta.progressNote || null,
+            completedDate: meta.completedDate || null
         });
 
         workPlan.updatedAt = new Date().toISOString();

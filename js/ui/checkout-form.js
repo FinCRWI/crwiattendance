@@ -19,6 +19,11 @@ export function renderCheckoutModal(budgetSelectHtml = '<option value="UNALLOCAT
                     <span class="checkout-modal-badge">Attendance</span>
                 </div>
                 <form id="checkout-form" novalidate>
+                    <div id="checkout-extra-time-banner" class="checkout-extra-time-banner" style="display:none;">
+                        <i class="fa-solid fa-clock"></i>
+                        <span id="checkout-extra-time-banner-text">You worked extra time today — please review the confirmation section below.</span>
+                        <button type="button" class="checkout-extra-time-banner-close" onclick="document.getElementById('checkout-extra-time-banner').style.display='none'">&times;</button>
+                    </div>
                     <div class="checkout-form-grid">
                         <section class="checkout-form-panel checkout-summary-panel">
                             <label class="checkout-section-label">Work Summary</label>
@@ -45,11 +50,11 @@ export function renderCheckoutModal(budgetSelectHtml = '<option value="UNALLOCAT
                             
                             <div class="checkout-extra-time-options">
                                 <label class="checkout-extra-time-option">
-                                    <input type="radio" name="extraTimeMode" value="full" checked onchange="window.app_handleExtraTimeModeChange('full')">
+                                    <input type="radio" name="extraTimeMode" value="full" onchange="window.app_handleExtraTimeModeChange('full')">
                                     <span>Full Extra Time</span>
                                 </label>
                                 <label class="checkout-extra-time-option">
-                                    <input type="radio" name="extraTimeMode" value="partial" onchange="window.app_handleExtraTimeModeChange('partial')">
+                                    <input type="radio" name="extraTimeMode" value="partial" checked onchange="window.app_handleExtraTimeModeChange('partial')">
                                     <span>Partial Extra Time</span>
                                 </label>
                             </div>

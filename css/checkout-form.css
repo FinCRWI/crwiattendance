@@ -398,6 +398,65 @@
     font-size: 0.85rem;
 }
 
+/* Extra time banner — sits at top of checkout form when >2h extra detected */
+.checkout-extra-time-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.75rem 0;
+    padding: 0.6rem 0.85rem;
+    border: 1px solid #f97316;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #fff7ed 0%, #fffbeb 100%);
+    color: #9a3412;
+    font-size: 0.78rem;
+    font-weight: 600;
+    animation: extra-time-banner-enter 0.35s ease-out;
+}
+.checkout-extra-time-banner i {
+    font-size: 0.95rem;
+    color: #f97316;
+    animation: extra-time-pulse 1.8s ease-in-out infinite;
+}
+.checkout-extra-time-banner-close {
+    margin-left: auto;
+    background: none;
+    border: none;
+    font-size: 1.05rem;
+    color: #9a3412;
+    cursor: pointer;
+    opacity: 0.6;
+    line-height: 1;
+}
+.checkout-extra-time-banner-close:hover { opacity: 1; }
+
+@keyframes extra-time-banner-enter {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes extra-time-pulse {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.2); }
+}
+
+/* Subtle highlight flash when the extra time section scrolls into view */
+.checkout-extra-time-panel.extra-time-highlight {
+    animation: extra-time-section-glow 3s ease-in-out 3;
+    border: 2px solid #f97316;
+}
+@keyframes extra-time-section-glow {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(249,115,22,0);
+        background: #fffbeb;
+        border-color: #fcd34d;
+    }
+    30%, 70% {
+        box-shadow: 0 0 0 6px rgba(249,115,22,0.35), 0 0 18px 3px rgba(249,115,22,0.25);
+        background: #fff7ed;
+        border-color: #f97316;
+    }
+}
+
 .checkout-extra-time-section {
     margin-bottom: 0.65rem;
     padding: 0.62rem 0.7rem;

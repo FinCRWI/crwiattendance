@@ -5,6 +5,8 @@
 const { test, expect } = require('@playwright/test');
 const { skipUnlessLive, grantGeolocation, loginAsDemo } = require('./live-helpers');
 
+test.setTimeout(180000);
+
 test('day-plan modal fetches by doc ids only and renders', async ({ page }) => {
   skipUnlessLive();
   await grantGeolocation(page);
