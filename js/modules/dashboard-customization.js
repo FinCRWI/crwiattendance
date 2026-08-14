@@ -7,6 +7,7 @@ const DEFAULTS = {
         hero: true,
         staffLeaveSummary: true,
         journeyReflection: true,
+        staffPerformance: true,
         statsRow: true
     },
     layoutDensity: 'standard',

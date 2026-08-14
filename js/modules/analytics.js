@@ -2039,6 +2039,305 @@ export class Analytics {
             return [];
         }
     }
+
+    // ─── Personal Performance ─────────────────────────────────────
+    // Computes 6-dimension performance score + 4-week trend for a single user.
+
+    async getPersonalPerformance(userId, options = {}) {
+    try {
+        const windowDays = Math.max(1, Number(options.windowDays ?? 7));
+        const trendWeeks = Math.max(1, Number(options.trendWeeks ?? 4));
+        const policy = this.getHeroPolicy();
+        const weights = policy.WEIGHTS || {};
+        const caps = policy.CAPS || {};
+
+        // Weights for the 6 dimensions
+        const wPunctuality = 0.15;
+        const wAttendance = 0.20;
+        const wTaskExecution = 0.25;
+        const wProductivity = 0.15;
+        const wPlanning = 0.15;
+        const wCompliance = 0.10;
+
+        // Build date ranges — non-overlapping windows, step = windowDays
+        const now = new Date();
+        const windows = [];
+        if (windowDays >= 365) {
+            // Yearly: single year window + 12 monthly trend points
+            const yearStart = new Date(now.getFullYear(), 0, 1);
+            const yearEnd = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+            windows.push({ start: yearStart, end: yearEnd, label: `${now.getFullYear()}`, index: 0 });
+        } else {
+            for (let i = 0; i < trendWeeks; i++) {
+                const end = new Date(now);
+                end.setDate(now.getDate() - (i * windowDays) - 1);
+                end.setHours(23, 59, 59, 999);
+                const start = new Date(end);
+                start.setDate(end.getDate() - (windowDays - 1));
+                start.setHours(0, 0, 0, 0);
+                const label = windowDays <= 7
+                    ? `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}–${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                    : start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                windows.push({ start, end, label, index: i });
+            }
+        }
+
+        // Fetch all needed data in parallel
+        const windowRanges = windows.map(w => ({ start: w.start, end: w.end }));
+
+        const [attendanceChunks, workPlanChunks] = await Promise.all([
+            Promise.all(windowRanges.map((r, i) =>
+                this.getAttendanceInRange(r.start, r.end, `perf:${userId}:${i}`)
+            )),
+            Promise.all(windowRanges.map((r, i) => {
+                const startIso = this.toLocalDateKey(r.start);
+                const endIso = this.toLocalDateKey(r.end);
+                return this.db.queryMany
+                    ? this.db.queryMany('work_plans', [
+                        { field: 'date', operator: '>=', value: startIso },
+                        { field: 'date', operator: '<=', value: endIso }
+                    ])
+                    : this.db.getAll('work_plans').then(rows =>
+                        (rows || []).filter(row => {
+                            const d = String(row?.date || '');
+                            return d >= startIso && d <= endIso;
+                        })
+                    );
+            }))
+        ]);
+
+        // Filter to target user
+        const filterUser = (logs) => logs.filter(l =>
+            String(l?.userId || l?.user_id || '') === String(userId)
+        );
+
+        // Compute scores for each window
+        const windowScores = windows.map((win, i) => {
+            const userLogs = filterUser(attendanceChunks[i] || []);
+            const userPlans = (workPlanChunks[i] || []).filter(p =>
+                String(p?.userId || p?.user_id || '') === String(userId)
+            );
+            return this._computeWeekPerformance(userLogs, userPlans, win, {
+                wPunctuality, wAttendance, wTaskExecution, wProductivity, wPlanning, wCompliance,
+                windowDays, caps, weights, policy
+            });
+        });
+
+        // Current week is index 0 (most recent)
+        const current = windowScores[0] || this._emptyPerformance();
+
+        // Build trend (index 0 = oldest, ascending chronological, max 6 points)
+        const trend = windowScores.slice().reverse().slice(-6).map((ws, i) => ({
+            week: ws.label,
+            score: ws.composite
+        }));
+
+        // Insights
+        const insights = this._generatePerformanceInsights(current, trend, userId, windowDays);
+
+        return {
+            userId,
+            composite: current.composite,
+            dimensions: current.dimensions,
+            details: current.details,
+            trend,
+            insights,
+            windowDays,
+            computedAt: Date.now()
+        };
+    } catch (err) {
+        console.warn('[Analytics] getPersonalPerformance failed for', userId, err?.message || err);
+        const empty = this._emptyPerformance();
+        return { ...empty, userId, trend: [], insights: [], windowDays, computedAt: Date.now() };
+    }
+    }
+
+    _computeWeekPerformance(userLogs, userPlans, week, config) {
+        const { wPunctuality, wAttendance, wTaskExecution, wProductivity, wPlanning, wCompliance, windowDays, caps, weights, policy } = config;
+        const label = week.label;
+
+        // ── PUNCTUALITY (0–100) ──
+        const lateDays = userLogs.filter(l => l.lateCountable === true || String(l.type || '').toLowerCase() === 'late').length;
+        const totalDays = userLogs.length;
+        const punctuality = totalDays > 0
+            ? Math.max(0, Math.round(((totalDays - lateDays) / totalDays) * 100))
+            : 50; // neutral default
+
+        // ── ATTENDANCE (0–100) ──
+        const daysWorked = new Set(userLogs.map(l => String(l.date || ''))).size;
+        const attendance = Math.min(100, Math.round((daysWorked / windowDays) * 100));
+
+        // ── TASK EXECUTION (0–100) ──
+        let taskPlanned = 0, taskCompleted = 0, taskMissed = 0, taskPostponed = 0, taskInProgress = 0;
+        let onTimeCompleted = 0, lateCompleted = 0;
+        userPlans.forEach(wp => {
+            if (!Array.isArray(wp?.plans)) return;
+            wp.plans.forEach(task => {
+                if (!task || task.isRemoved === true) return;
+                if (!String(task.task || '').trim()) return;
+                taskPlanned++;
+                const status = this.classifyHeroTaskStatus(task.status, wp.date);
+                if (status === 'completed') {
+                    taskCompleted++;
+                    // On-time check
+                    if (task.completedDate && wp.date) {
+                        const diffMs = new Date(task.completedDate).getTime() - new Date(wp.date + 'T23:59:59').getTime();
+                        if (diffMs <= 0) onTimeCompleted++;
+                        else lateCompleted++;
+                    } else {
+                        onTimeCompleted++; // no date = assumed on-time
+                    }
+                } else if (status === 'missed') taskMissed++;
+                else if (status === 'postponed') taskPostponed++;
+                else taskInProgress++;
+            });
+        });
+        const completionRate = taskPlanned > 0 ? (taskCompleted / taskPlanned) * 100 : 0;
+        const onTimeRate = taskCompleted > 0 ? (onTimeCompleted / taskCompleted) * 100 : 100;
+        const missRate = taskPlanned > 0 ? (taskMissed / taskPlanned) * 100 : 0;
+        const taskExecution = Math.max(0, Math.min(100, Math.round(
+            completionRate * 0.5 + onTimeRate * 0.2 - missRate * 0.3
+        )));
+
+        // ── PRODUCTIVITY (0–100) ──
+        const activityScores = userLogs
+            .map(l => Number(l.activityScore))
+            .filter(s => Number.isFinite(s));
+        const avgActivity = activityScores.length > 0
+            ? activityScores.reduce((a, b) => a + b, 0) / activityScores.length
+            : 50;
+        const totalExtraMs = userLogs.reduce((sum, l) =>
+            sum + Number(l?.extraTimeConfirmedMs || l?.extraWorkedMs || 0), 0
+        );
+        const extraHours = totalExtraMs / (1000 * 60 * 60);
+        const workDescDepth = userLogs.reduce((sum, l) =>
+            sum + String(l?.workDescription || '').length, 0
+        );
+        const depthScore = Math.min(100, (workDescDepth / Math.max(1, totalDays * 200)) * 100);
+        const expectedExtraHours = Math.max(1, windowDays * 0.5); // ~0.5h extra per day expected
+        const extraHoursScore = Math.min(100, (extraHours / expectedExtraHours) * 100);
+        const productivity = Math.round(
+            avgActivity * 0.4 + extraHoursScore * 0.3 + depthScore * 0.3
+        );
+
+        // ── PLANNING (0–100) ──
+        const expectedWeeklyTasks = Math.max(1, Number(policy.EXPECTED_WEEKLY_TASKS || 5));
+        const expectedTasks = Math.max(1, Math.round(expectedWeeklyTasks * (windowDays / 7)));
+        const planVolume = Math.min(100, (taskPlanned / expectedTasks) * 100);
+        const subPlanCount = userPlans.reduce((sum, wp) =>
+            sum + (Array.isArray(wp?.plans) ? wp.plans.filter(t =>
+                Array.isArray(t?.subPlans) && t.subPlans.length > 0
+            ).length : 0), 0
+        );
+        const subPlanScore = Math.min(100, subPlanCount * 20);
+        const planning = Math.round(planVolume * 0.6 + subPlanScore * 0.2 + (taskCompleted > 0 ? 20 : 0));
+
+        // ── COMPLIANCE (0–100) ──
+        const locationMismatches = userLogs.filter(l => l.locationMismatched === true).length;
+        const autoCheckouts = userLogs.filter(l => l.autoCheckout === true).length;
+        const compliance = Math.max(0, Math.min(100, Math.round(100
+            - (totalDays > 0 ? (locationMismatches / totalDays) * 50 : 0)
+            - (totalDays > 0 ? (autoCheckouts / totalDays) * 50 : 0)
+        )));
+
+        // ── COMPOSITE ──
+        const composite = Math.round(
+            punctuality * wPunctuality
+            + attendance * wAttendance
+            + taskExecution * wTaskExecution
+            + productivity * wProductivity
+            + planning * wPlanning
+            + compliance * wCompliance
+        );
+
+        return {
+            label,
+            composite,
+            dimensions: {
+                punctuality: { score: punctuality, label: 'Punctuality', icon: 'fa-solid fa-clock', color: '#3b82f6' },
+                attendance: { score: attendance, label: 'Attendance', icon: 'fa-solid fa-calendar-check', color: '#10b981' },
+                taskExecution: { score: taskExecution, label: 'Task Execution', icon: 'fa-solid fa-list-check', color: '#f59e0b' },
+                productivity: { score: productivity, label: 'Productivity', icon: 'fa-solid fa-bolt', color: '#8b5cf6' },
+                planning: { score: planning, label: 'Planning', icon: 'fa-solid fa-clipboard-list', color: '#06b6d4' },
+                compliance: { score: compliance, label: 'Compliance', icon: 'fa-solid fa-shield-halved', color: '#22c55e' }
+            },
+            details: {
+                lateDays, totalDays, daysWorked,
+                taskPlanned, taskCompleted, taskMissed, taskPostponed, taskInProgress,
+                onTimeCompleted, lateCompleted,
+                avgActivity: Math.round(avgActivity), extraHours: Number(extraHours.toFixed(1)),
+                locationMismatches, autoCheckouts
+            }
+        };
+    }
+
+    _emptyPerformance() {
+        return {
+            composite: 0,
+            dimensions: {
+                punctuality: { score: 0, label: 'Punctuality', icon: 'fa-solid fa-clock', color: '#3b82f6' },
+                attendance: { score: 0, label: 'Attendance', icon: 'fa-solid fa-calendar-check', color: '#10b981' },
+                taskExecution: { score: 0, label: 'Task Execution', icon: 'fa-solid fa-list-check', color: '#f59e0b' },
+                productivity: { score: 0, label: 'Productivity', icon: 'fa-solid fa-bolt', color: '#8b5cf6' },
+                planning: { score: 0, label: 'Planning', icon: 'fa-solid fa-clipboard-list', color: '#06b6d4' },
+                compliance: { score: 0, label: 'Compliance', icon: 'fa-solid fa-shield-halved', color: '#22c55e' }
+            },
+            details: {},
+            label: ''
+        };
+    }
+
+    _generatePerformanceInsights(current, trend, userId, windowDays = 7) {
+        const insights = [];
+        const dims = current.dimensions || {};
+        const details = current.details || {};
+        const periodLabel = windowDays <= 7 ? 'week' : windowDays <= 31 ? 'period' : 'period';
+
+        // Strongest dimension
+        let maxDim = null, maxScore = -1;
+        Object.entries(dims).forEach(([key, d]) => {
+            if (d.score > maxScore) { maxScore = d.score; maxDim = key; }
+        });
+        if (maxDim && maxScore > 70) {
+            insights.push({ type: 'positive', text: `Strongest area: ${dims[maxDim].label} (${maxScore}/100)` });
+        }
+
+        // Weakest dimension
+        let minDim = null, minScore = 101;
+        Object.entries(dims).forEach(([key, d]) => {
+            if (d.score < minScore) { minScore = d.score; minDim = key; }
+        });
+        if (minDim && minScore < 60) {
+            insights.push({ type: 'improve', text: `Focus area: ${dims[minDim].label} (${minScore}/100)` });
+        }
+
+        // Trend
+        if (trend.length >= 2) {
+            const latest = trend[trend.length - 1].score;
+            const prev = trend[trend.length - 2].score;
+            const diff = latest - prev;
+            if (diff > 5) insights.push({ type: 'positive', text: `Improving trend: +${diff} points from previous ${periodLabel}` });
+            else if (diff < -5) insights.push({ type: 'warning', text: `Declining: ${diff} points from previous ${periodLabel}` });
+            else insights.push({ type: 'neutral', text: `Stable performance this ${periodLabel}` });
+        }
+
+        // Late days
+        if (details.lateDays > 0) {
+            insights.push({ type: 'warning', text: `${details.lateDays} late day${details.lateDays > 1 ? 's' : ''} this ${periodLabel}` });
+        }
+
+        // Missed tasks
+        if (details.taskMissed > 0) {
+            insights.push({ type: 'improve', text: `${details.taskMissed} task${details.taskMissed > 1 ? 's' : ''} missed — review and reschedule` });
+        }
+
+        // Extra hours
+        if (details.extraHours > 2) {
+            insights.push({ type: 'positive', text: `${details.extraHours}h extra hours contributed` });
+        }
+
+        return insights;
+    }
 }
 
 export const AppAnalytics = new Analytics();

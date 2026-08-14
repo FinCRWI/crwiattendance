@@ -9,6 +9,7 @@ import { normalizeTaskStatus } from '../utils/task-status.js';
 import { isTaskVisibleToViewer } from '../utils/task-visibility.js';
 import { renderYearlyPlan } from './team-schedule.js';
 import { renderJourneyReflectionCard } from './journey-reflection.js';
+import { renderStaffPerformance, cleanupPerformanceChart, renderTeamPerformanceExpanded } from './staff-performance.js';
 import { AppConfig } from '../config.js';
 import {
   DASHBOARD_CARD_MODE_TILE,
@@ -314,6 +315,9 @@ const buildExpandedCardTemplate = (cardEl) => {
     if (cardEl.classList.contains('dashboard-hero-stats-card')) {
         html += renderHeroLeaderboardExpanded(window.app_dashboardHeroLeaderboard, window.app_dashboardHeroData);
     }
+    if (cardEl.classList.contains('dashboard-perf-card')) {
+        html += '<div id="perf-team-expanded"><div style="text-align:center;padding:2rem;color:#94a3b8;">Loading team performance...</div></div>';
+    }
     return html;
 };
 
@@ -383,6 +387,11 @@ const updateHeroExpandedOverlay = () => {
     body.innerHTML = `<div class="dashboard-max-card-content">${renderHeroExpandedAuditMarkup()}</div>`;
 };
 window.app_updateHeroExpandedOverlay = updateHeroExpandedOverlay;
+
+window.app_updatePerfExpandedOverlay = () => {
+    console.log('[Perf] Expanded overlay hook fired');
+    renderTeamPerformanceExpanded().catch(e => console.error('[Perf] Expanded render failed:', e));
+};
 
 const createDashboardModeButton = (cardId, title, mode) => {
     const btn = document.createElement('button');
@@ -1221,6 +1230,7 @@ export function renderCustomizationWidget(settings) {
         ['hero', 'Hero of the Week'],
         ['staffLeaveSummary', 'Staff Leave Summary'],
         ['journeyReflection', 'Journey Reflection'],
+        ['staffPerformance', 'Staff Performance'],
         ['statsRow', 'Stats Row']
     ];
 
@@ -2028,6 +2038,11 @@ export async function renderDashboard() {
     measurePerf('dashboard:fetch', 'dashboard:fetch:start', 'dashboard:fetch:end');
     console.timeEnd('DashboardFetch');
 
+    // Fetch personal performance data (non-blocking — renders when ready)
+    const personalPerfPromise = window.AppAnalytics?.getPersonalPerformance
+        ? window.AppAnalytics.getPersonalPerformance(targetStaffId, { windowDays: 7, trendWeeks: 4 }).catch(() => null)
+        : Promise.resolve(null);
+
     const heroMeta = {
         lowRead: false,
         generatedAt: dailySummary?.generatedAt || dailySummary?.meta?.generatedAt || 0,
@@ -2297,6 +2312,9 @@ export async function renderDashboard() {
             canUndo: true
         });
 
+        const personalPerfData = await personalPerfPromise;
+        cleanupPerformanceChart();
+        const staffPerfHTML = wvIf('staffPerformance', renderStaffPerformance(personalPerfData, { windowDays: 7 }));
         detailSectionHTML = `
                     <div class="dashboard-detail-section" data-zone-id="detailSection">
                         ${isFullAdmin ? `<div class="dashboard-admin-actions-row">
@@ -2304,6 +2322,7 @@ export async function renderDashboard() {
                             ${renderMissedCheckoutRequests(missedCheckoutRequests)}
                             ${historyHTML}
                         </div>` : ''}
+                        ${staffPerfHTML}
                         ${wvIf('teamActivity', primaryRowThirdCard)}
                         ${wvIf('journeyReflection', journeyReflectionHTML)}
                     </div>`;
@@ -2315,8 +2334,12 @@ export async function renderDashboard() {
                 ${renderStatsCard('Yearly Summary', isViewingSelf ? yearlyStats.label : `${yearlyStats.label} for ${targetStaff?.name || 'Staff'}`, yearlyStats, 'yearly')}
             </div>`);
     } else {
+        const personalPerfData = await personalPerfPromise;
+        cleanupPerformanceChart();
+        const staffPerfHTML = wvIf('staffPerformance', renderStaffPerformance(personalPerfData, { windowDays: 7 }));
         detailSectionHTML = `
                     <div class="dashboard-detail-section" data-zone-id="detailSection">
+                        ${staffPerfHTML}
                         ${wvIf('teamActivity', primaryRowThirdCard)}
                         ${wvIf('staffLeaveSummary', renderStaffLeaveSummary(allLeaves, user))}
                         ${wvIf('journeyReflection', journeyReflectionHTML)}

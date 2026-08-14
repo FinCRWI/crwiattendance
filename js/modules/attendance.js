@@ -392,7 +392,7 @@ export class Attendance {
             type: statusMeta.status,
             dayCredit: statusMeta.dayCredit,
             lateCountable: statusMeta.lateCountable,
-            extraWorkedMs: statusMeta.extraWorkedMs || 0,
+            extraWorkedMs: confirmedExtra > 0 ? confirmedExtra : (statusMeta.extraWorkedMs || 0),
             policyVersion: 'v2',
             location: user.currentLocation?.address || 'Checked In Location',
             lat: user.currentLocation?.lat,

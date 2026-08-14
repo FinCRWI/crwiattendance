@@ -6384,11 +6384,16 @@ textarea:focus {
 .dashboard-max-card-content .dashboard-hero-card,
 .dashboard-max-card-content .dashboard-stats-card,
 .dashboard-max-card-content .dashboard-team-activity-card,
-.dashboard-max-card-content .dashboard-worklog-card {
+.dashboard-max-card-content .dashboard-worklog-card,
+.dashboard-max-card-content .dashboard-perf-card {
     width: 100% !important;
     max-width: none !important;
     min-height: 0 !important;
     height: auto !important;
+}
+
+.dashboard-max-card-content .dashboard-perf-card {
+    padding: 1.25rem 1.5rem;
 }
 
 .hero-leaderboard-panel {

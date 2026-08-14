@@ -118,6 +118,9 @@ export function openDashboardCardMaxOverlay(cardId, triggerEl = null) {
         if (cardId === 'hero-week' && typeof window.app_updateHeroExpandedOverlay === 'function') {
             window.app_updateHeroExpandedOverlay();
         }
+        if (cardId === 'staff-performance' && typeof window.app_updatePerfExpandedOverlay === 'function') {
+            window.app_updatePerfExpandedOverlay();
+        }
         markPerf(`dashboard:max:${cardId}:content`);
         measurePerf(`dashboard:max:${cardId}`, `dashboard:max:${cardId}:shell`, `dashboard:max:${cardId}:content`);
     };

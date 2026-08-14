@@ -12,7 +12,7 @@ const R_MAX = 800;
 
 const ZONE_MAP = {
   primaryRow: ['checkin', 'worklog', 'team-schedule'],
-  detailSection: ['journey-reflection', 'team-activity', 'hero-week', 'leave-requests', 'leave-history', 'missed-checkout'],
+  detailSection: ['journey-reflection', 'team-activity', 'hero-week', 'leave-requests', 'leave-history', 'missed-checkout', 'staff-performance'],
   statsRow: ['stats-monthly', 'stats-yearly']
 };
 
@@ -32,6 +32,7 @@ const CLS = [
   ['.dashboard-leave-requests-card', 'leave-requests'],
   ['.dashboard-leave-history-card', 'leave-history'],
   ['.dashboard-tagged-card', 'missed-checkout'],
+  ['.dashboard-perf-card', 'staff-performance'],
   ['.dashboard-stats-card[data-stats-type="monthly"]', 'stats-monthly'],
   ['.dashboard-stats-card[data-stats-type="yearly"]', 'stats-yearly']
 ];
