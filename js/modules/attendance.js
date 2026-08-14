@@ -735,19 +735,14 @@ export class Attendance {
         }
 
         const day = checkInDateObj.getDay();
-        if (day === 0) {
-            return { status: 'Present', dayCredit: 1, lateCountable: false, extraWorkedMs: 0 };
-        }
-        // Saturday holiday check via config
-        if (day === 6 && typeof AppConfig.IS_SATURDAY_OFF === 'function' && AppConfig.IS_SATURDAY_OFF(checkInDateObj)) {
-            return { status: 'Present', dayCredit: 1, lateCountable: false, extraWorkedMs: 0 };
-        }
-        // Configured holiday check (Republic Day, Diwali, etc.)
-        if (typeof window.AppAnalytics?.isConfiguredHoliday === 'function') {
-            const dateKey = `${checkInDateObj.getFullYear()}-${String(checkInDateObj.getMonth() + 1).padStart(2, '0')}-${String(checkInDateObj.getDate()).padStart(2, '0')}`;
-            if (window.AppAnalytics.isConfiguredHoliday(dateKey)) {
-                return { status: 'Present', dayCredit: 1, lateCountable: false, extraWorkedMs: 0 };
-            }
+        // On non-working days (Sunday, off-Saturdays, holidays) all worked hours count as extra
+        const isNonWorkingDay = day === 0
+            || (day === 6 && typeof AppConfig.IS_SATURDAY_OFF === 'function' && AppConfig.IS_SATURDAY_OFF(checkInDateObj))
+            || (typeof window.AppAnalytics?.isConfiguredHoliday === 'function'
+                && window.AppAnalytics.isConfiguredHoliday(
+                    `${checkInDateObj.getFullYear()}-${String(checkInDateObj.getMonth() + 1).padStart(2, '0')}-${String(checkInDateObj.getDate()).padStart(2, '0')}`));
+        if (isNonWorkingDay) {
+            return { status: 'Present', dayCredit: 1, lateCountable: false, extraWorkedMs: Math.max(0, durationMs) };
         }
 
         const checkInMins = (checkInDateObj.getHours() * 60) + checkInDateObj.getMinutes();
@@ -786,11 +781,11 @@ export class Attendance {
         } else if (checkInMins > minorLateEnd) {
             status = netHours >= 4 ? 'Half Day' : 'Absent';
         } else if (checkInMins > graceEnd) {
+            lateCountable = true;
             if (netHours >= 8) {
                 status = 'Present (Late Waived)';
             } else {
                 status = 'Late';
-                lateCountable = true;
             }
         } else {
             if (netHours >= 8) {

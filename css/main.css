@@ -2627,6 +2627,29 @@ textarea:focus {
     color: #065f46;
     font-weight: 800;
 }
+.hero-score-pill {
+    background: linear-gradient(135deg, #ede9fe, #e0e7ff);
+    border-color: #c7d2fe;
+}
+.hero-score-pill strong {
+    color: #4338ca;
+}
+.hero-dims-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.2rem;
+    margin-top: 0.25rem;
+}
+.hero-dim-tag {
+    font-size: 0.52rem;
+    font-weight: 700;
+    padding: 0.1rem 0.35rem;
+    border-radius: 6px;
+    background: rgba(241, 245, 249, 0.9);
+    border: 1px solid rgba(203, 213, 225, 0.6);
+    color: #475569;
+    white-space: nowrap;
+}
 
 .dashboard-hero-stats-foot {
     margin-top: 0.38rem;
@@ -11128,6 +11151,233 @@ body.dashboard-max-open {
     color: #77909a !important;
     line-height: 1.3;
     overflow-wrap: anywhere;
+}
+
+/* ═══ 3D Check-In Card Animations ═══ */
+
+/* --- Card 3D tilt on hover --- */
+.dashboard-checkin-card {
+    perspective: 800px;
+    transform-style: preserve-3d;
+    transition: transform 0.4s cubic-bezier(0.23, 1, 0.32, 1), box-shadow 0.4s ease;
+    will-change: transform;
+}
+.dashboard-checkin-card:hover {
+    transform: rotateX(2deg) rotateY(-2deg) translateZ(8px);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(99, 102, 241, 0.1);
+}
+
+/* --- Inner glass shine sweep --- */
+.dashboard-checkin-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: inherit;
+    background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.25) 45%, rgba(255,255,255,0.05) 50%, transparent 55%);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+    z-index: 1;
+}
+.dashboard-checkin-card:hover::before {
+    opacity: 1;
+    animation: checkinGlassSweep 1.2s ease-in-out;
+}
+@keyframes checkinGlassSweep {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+/* --- Timer clock ring --- */
+.dashboard-checkin-timer-wrap {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0.5rem 1rem;
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(99,102,241,0.06) 0%, rgba(139,92,246,0.06) 100%);
+}
+.clock-ring {
+    position: relative;
+    width: 64px;
+    height: 64px;
+    margin-bottom: 0.15rem;
+}
+.clock-ring-track {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 2.5px solid rgba(99, 102, 241, 0.2);
+    background: radial-gradient(circle, rgba(99,102,241,0.03) 0%, transparent 70%);
+}
+/* Hour markers — generated via JS but styled here */
+.clock-marker {
+    position: absolute;
+    width: 2px;
+    height: 5px;
+    background: rgba(99, 102, 241, 0.4);
+    border-radius: 1px;
+    top: 2px;
+    left: 50%;
+    transform-origin: 50% 30px;
+}
+.clock-marker.clock-marker-major {
+    height: 7px;
+    width: 2.5px;
+    background: rgba(99, 102, 241, 0.7);
+}
+/* Clock hands */
+.clock-hand {
+    position: absolute;
+    bottom: 50%;
+    left: 50%;
+    transform-origin: 50% 100%;
+    border-radius: 2px;
+}
+.clock-hand-hour {
+    width: 2.5px;
+    height: 16px;
+    margin-left: -1.25px;
+    background: linear-gradient(to top, #1e293b, #475569);
+    z-index: 3;
+}
+.clock-hand-minute {
+    width: 1.8px;
+    height: 21px;
+    margin-left: -0.9px;
+    background: linear-gradient(to top, #334155, #64748b);
+    z-index: 4;
+}
+.clock-hand-second {
+    width: 1px;
+    height: 23px;
+    margin-left: -0.5px;
+    background: #ef4444;
+    z-index: 5;
+    transition: none;
+}
+.clock-center-dot {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 5px;
+    height: 5px;
+    margin: -2.5px 0 0 -2.5px;
+    border-radius: 50%;
+    background: #ef4444;
+    z-index: 6;
+    box-shadow: 0 0 4px rgba(239,68,68,0.5);
+}
+
+/* --- Avatar glow when checked in --- */
+.dashboard-checkin-avatar-wrap {
+    position: relative;
+}
+.dashboard-checkin-avatar {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.dashboard-checkin-avatar-wrap:hover .dashboard-checkin-avatar {
+    transform: scale(1.1) translateZ(10px);
+}
+[data-checked-in="true"] .dashboard-checkin-avatar {
+    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.3), 0 0 20px rgba(34, 197, 94, 0.15);
+    animation: avatarGlow 2.5s ease-in-out infinite alternate;
+}
+@keyframes avatarGlow {
+    0% { box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.3), 0 0 15px rgba(34, 197, 94, 0.1); }
+    100% { box-shadow: 0 0 0 5px rgba(34, 197, 94, 0.15), 0 0 25px rgba(34, 197, 94, 0.25); }
+}
+
+/* --- Status dot breathing pulse --- */
+[data-checked-in="true"] .dashboard-checkin-status-dot {
+    background: #22c55e;
+    animation: statusDotPulse 1.8s ease-in-out infinite;
+}
+[data-checked-in="false"] .dashboard-checkin-status-dot {
+    background: #94a3b8;
+}
+@keyframes statusDotPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); transform: scale(1); }
+    50% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); transform: scale(1.15); }
+}
+
+/* --- Check-in button 3D glow pulse --- */
+.dashboard-checkin-btn {
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s ease, box-shadow 0.3s ease;
+}
+.dashboard-checkin-btn:not(:disabled):hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: 0 8px 25px rgba(99, 102, 241, 0.35);
+}
+.dashboard-checkin-btn:not(:disabled):active {
+    transform: translateY(1px) scale(0.98);
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.2);
+}
+.dashboard-checkin-btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255,255,255,0.2) 0%, transparent 50%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+.dashboard-checkin-btn:not(:disabled):hover::after {
+    opacity: 1;
+}
+
+/* --- Countdown bar 3D fill glow --- */
+.dashboard-checkin-countdown-progress {
+    background: linear-gradient(90deg, #6366f1, #8b5cf6, #a78bfa);
+    border-radius: 999px;
+    transition: width 1s ease;
+    box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
+    position: relative;
+}
+.dashboard-checkin-countdown-progress::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: -1px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 6px rgba(99, 102, 241, 0.8);
+    animation: progressGlow 1.5s ease-in-out infinite;
+}
+@keyframes progressGlow {
+    0%, 100% { opacity: 0.6; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.3); }
+}
+
+/* --- Overtime 3D floating effect --- */
+.dashboard-checkin-overtime {
+    transition: transform 0.3s ease;
+}
+.dashboard-checkin-overtime:hover {
+    transform: translateZ(5px);
+}
+@keyframes overtimeFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-2px); }
+}
+.dashboard-checkin-overtime-value {
+    animation: overtimeFloat 3s ease-in-out infinite;
+}
+
+/* --- Location pin pulse --- */
+.dashboard-checkin-location i {
+    animation: locPinPulse 2s ease-in-out infinite;
+}
+@keyframes locPinPulse {
+    0%, 100% { transform: scale(1); opacity: 0.7; }
+    50% { transform: scale(1.2); opacity: 1; }
 }
 
 @keyframes dashboardGlassSweep {

@@ -3851,6 +3851,28 @@ function startTimer(targetUser = null, readOnly = false) {
                     display.textContent = `${hrs} : ${mins} : ${secs}`;
                 }
 
+                // Update clock ring hands
+                const clockRing = document.getElementById('clock-ring');
+                if (clockRing && !clockRing.dataset.markersInit) {
+                    clockRing.dataset.markersInit = '1';
+                    for (let h = 0; h < 12; h++) {
+                        const marker = document.createElement('div');
+                        marker.className = 'clock-marker' + (h % 3 === 0 ? ' clock-marker-major' : '');
+                        marker.style.transform = `rotate(${h * 30}deg)`;
+                        clockRing.querySelector('.clock-ring-track').appendChild(marker);
+                    }
+                }
+                const clockNow = new Date();
+                const secDeg = clockNow.getSeconds() * 6;
+                const minDeg = clockNow.getMinutes() * 6 + clockNow.getSeconds() * 0.1;
+                const hrDeg = (clockNow.getHours() % 12) * 30 + clockNow.getMinutes() * 0.5;
+                const clockSec = document.getElementById('clock-second');
+                const clockMin = document.getElementById('clock-minute');
+                const clockHr = document.getElementById('clock-hour');
+                if (clockSec) clockSec.style.transform = `rotate(${secDeg}deg)`;
+                if (clockMin) clockMin.style.transform = `rotate(${minDeg}deg)`;
+                if (clockHr) clockHr.style.transform = `rotate(${hrDeg}deg)`;
+
                 // If session started on a previous day, avoid confusing overtime UI.
                 if (isStaleSession) {
                     if (countdownContainer) countdownContainer.style.display = 'none';

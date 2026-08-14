@@ -503,12 +503,10 @@ export class Analytics {
     }
 
     calculateStatsForLogs(userLogs) {
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = today.getMonth();
-
-        const startOfMonth = new Date(year, month, 1);
-        const endOfMonth = new Date(year, month + 1, 0);
+        // Derive the date range from the actual logs instead of hardcoding current month
+        const dates = (userLogs || []).map(l => new Date(l.date)).filter(d => !Number.isNaN(d.getTime())).sort((a, b) => a - b);
+        const startOfMonth = dates.length > 0 ? new Date(dates[0].getFullYear(), dates[0].getMonth(), 1) : new Date();
+        const endOfMonth = dates.length > 0 ? new Date(dates[dates.length - 1].getFullYear(), dates[dates.length - 1].getMonth() + 1, 0) : new Date();
 
         const breakdown = {
             'Present': 0, 'Late': 0, 'Early Departure': 0, 'Work - Home': 0, 'Training': 0,
@@ -564,8 +562,10 @@ export class Analytics {
                         if (inMinutes !== null) totalLateMinutes += Math.max(0, (inMinutes - lateCutoff));
                     }
 
-                    // EARLY DEPARTURE Check
-                    if (outMinutes !== null && outMinutes < earlyDeparture && !String(type).includes('Leave') && type !== 'Absent') {
+                    // EARLY DEPARTURE Check — skip holidays, Sundays, off-Saturdays, and auto-checkouts
+                    const logDateStr = log.date || '';
+                    const isAutoCheckout = log.autoCheckout === true;
+                    if (outMinutes !== null && outMinutes < earlyDeparture && !String(type).includes('Leave') && type !== 'Absent' && !this._isHolidayOrOffDay(logDateStr) && !isAutoCheckout) {
                         stats.earlyDepartures++;
                         breakdown['Early Departure']++;
                     }
@@ -578,7 +578,7 @@ export class Analytics {
                         if (inMinutes !== null && inMinutes > lateCutoff) {
                             totalLateMinutes += (inMinutes - lateCutoff);
                         }
-                    } else if (type === 'Early Departure') {
+                    } else if (type === 'Early Departure' && !this._isHolidayOrOffDay(log.date || '')) {
                         stats.earlyDepartures++;
                         breakdown['Early Departure']++;
                     }
@@ -595,8 +595,16 @@ export class Analytics {
                 } else {
                     const allowExtra = !(log.autoCheckout && !log.autoCheckoutExtraApproved);
                     if (allowExtra) {
-                        if (inMinutes !== null && inMinutes < workStartMinutes) totalExtraMinutes += (workStartMinutes - inMinutes);
-                        if (outMinutes !== null && outMinutes > earlyDeparture) totalExtraMinutes += (outMinutes - earlyDeparture);
+                        const logIsH = this._isHolidayOrOffDay(log.date || '');
+                        if (logIsH) {
+                            // On holidays/Sundays/off-Saturdays all worked hours are extra
+                            if (inMinutes !== null && outMinutes !== null && outMinutes > inMinutes) {
+                                totalExtraMinutes += (outMinutes - inMinutes);
+                            }
+                        } else {
+                            if (inMinutes !== null && inMinutes < workStartMinutes) totalExtraMinutes += (workStartMinutes - inMinutes);
+                            if (outMinutes !== null && outMinutes > earlyDeparture) totalExtraMinutes += (outMinutes - earlyDeparture);
+                        }
                     }
                 }
 
@@ -629,11 +637,11 @@ export class Analytics {
         // Actually, let's simplify to match the request exactly.
 
         stats.extraWorkedHours = Number((totalExtraMinutes / 60).toFixed(2));
-        stats.penalty = Math.floor((stats.late || 0) / ((typeof AppConfig !== 'undefined' && AppConfig ? AppConfig.LATE_GRACE_COUNT : 3) || 3)) * ((typeof AppConfig !== 'undefined' && AppConfig ? AppConfig.LATE_DEDUCTION_PER_BLOCK : 0.5) || 0.5);
+        stats.penaltyLeaves = Math.floor((stats.late || 0) / ((typeof AppConfig !== 'undefined' && AppConfig ? AppConfig.LATE_GRACE_COUNT : 3) || 3)) * ((typeof AppConfig !== 'undefined' && AppConfig ? AppConfig.LATE_DEDUCTION_PER_BLOCK : 0.5) || 0.5);
         const offsetStepHours = (typeof AppConfig !== 'undefined' && AppConfig ? AppConfig.EXTRA_HOURS_FOR_HALF_DAY_OFFSET : 4) || 4;
         const penaltyStepDays = (typeof AppConfig !== 'undefined' && AppConfig ? AppConfig.LATE_DEDUCTION_PER_BLOCK : 0.5) || 0.5;
         stats.penaltyOffset = Math.floor((stats.extraWorkedHours || 0) / offsetStepHours) * penaltyStepDays;
-        stats.effectivePenalty = Math.max(0, stats.penalty - stats.penaltyOffset);
+        stats.effectivePenalty = Math.max(0, stats.penaltyLeaves - stats.penaltyOffset);
         stats.totalLateDuration = this.formatDuration(totalLateMinutes);
         stats.totalExtraDuration = this.formatDuration(totalExtraMinutes);
 
@@ -711,8 +719,10 @@ export class Analytics {
                         if (inMinutes !== null) totalLateMinutes += Math.max(0, (inMinutes - lateCutoff));
                     }
 
-                    // EARLY DEPARTURE Check
-                    if (outMinutes !== null && outMinutes < earlyDeparture && !String(type).includes('Leave') && type !== 'Absent') {
+                    // EARLY DEPARTURE Check — skip holidays, Sundays, off-Saturdays, and auto-checkouts
+                    const logDateStr2 = log.date || '';
+                    const isAutoCheckout2 = log.autoCheckout === true;
+                    if (outMinutes !== null && outMinutes < earlyDeparture && !String(type).includes('Leave') && type !== 'Absent' && !this._isHolidayOrOffDay(logDateStr2) && !isAutoCheckout2) {
                         stats.earlyDepartures++;
                         breakdown['Early Departure']++;
                     }
@@ -722,7 +732,7 @@ export class Analytics {
                         if (inMinutes !== null && inMinutes > lateCutoff) {
                             totalLateMinutes += (inMinutes - lateCutoff);
                         }
-                    } else if (type === 'Early Departure') {
+                    } else if (type === 'Early Departure' && !this._isHolidayOrOffDay(log.date || '')) {
                         stats.earlyDepartures++;
                         breakdown['Early Departure']++;
                     }
@@ -739,8 +749,16 @@ export class Analytics {
                 } else {
                     const allowExtra = !(log.autoCheckout && !log.autoCheckoutExtraApproved);
                     if (allowExtra) {
-                        if (inMinutes !== null && inMinutes < workStartMinutes) totalExtraMinutes += (workStartMinutes - inMinutes);
-                        if (outMinutes !== null && outMinutes > earlyDeparture) totalExtraMinutes += (outMinutes - earlyDeparture);
+                        const logIsH = this._isHolidayOrOffDay(log.date || '');
+                        if (logIsH) {
+                            // On holidays/Sundays/off-Saturdays all worked hours are extra
+                            if (inMinutes !== null && outMinutes !== null && outMinutes > inMinutes) {
+                                totalExtraMinutes += (outMinutes - inMinutes);
+                            }
+                        } else {
+                            if (inMinutes !== null && inMinutes < workStartMinutes) totalExtraMinutes += (workStartMinutes - inMinutes);
+                            if (outMinutes !== null && outMinutes > earlyDeparture) totalExtraMinutes += (outMinutes - earlyDeparture);
+                        }
                     }
                 }
 
@@ -852,6 +870,20 @@ export class Analytics {
                 : `${dateStr.getFullYear()}-${String(dateStr.getMonth() + 1).padStart(2, '0')}-${String(dateStr.getDate()).padStart(2, '0')}`;
             return this._cachedHolidaySet.has(dateKey);
         }
+        return false;
+    }
+
+    // Returns true if the date is a Sunday, off-Saturday, or configured holiday.
+    // Used to exclude non-working days from early-departure / late penalties.
+    _isHolidayOrOffDay(dateStr) {
+        const d = new Date(dateStr);
+        if (Number.isNaN(d.getTime())) return false;
+        // Sunday
+        if (d.getDay() === 0) return true;
+        // 2nd/4th Saturday (off)
+        if (d.getDay() === 6 && typeof AppConfig !== 'undefined' && AppConfig && typeof AppConfig.IS_SATURDAY_OFF === 'function' && AppConfig.IS_SATURDAY_OFF(d)) return true;
+        // Configured holiday (Republic Day, Diwali, etc.)
+        if (this.isConfiguredHoliday(dateStr)) return true;
         return false;
     }
 
@@ -977,11 +1009,13 @@ export class Analytics {
             taskInProgress: 0,
             taskMissed: 0,
             taskPostponed: 0,
-            taskPlanningScore: 0,
             completionRate: 0,
-            absoluteVolumeScore: 0,
-            taskScore: 0,
-            attendanceFactor: Number((this.getHeroPolicy()?.ATTENDANCE_MODIFIER?.base ?? 0.9).toFixed(3)),
+            punctuality: 0,
+            attendanceScore: 0,
+            taskExecution: 0,
+            productivity: 0,
+            planning: 0,
+            compliance: 0,
             finalScore: 0
         };
     }
@@ -1313,31 +1347,44 @@ export class Analytics {
         return byUser;
     }
 
-    rankHeroCandidates(attendanceStats = [], taskStats = new Map(), policy = {}) {
-        const weights = policy.WEIGHTS || {};
-        const caps = policy.CAPS || {};
+    rankHeroCandidates(attendanceStats = [], taskStats = new Map(), policy = {}, rawLogs = [], rawWorkPlans = [], dateRange = null) {
+        // Use the same 6-dimension additive formula as the Performance widget
         const windowDays = Math.max(1, Number(policy.WINDOW_DAYS || 7));
-        const hourCap = Math.max(1, Number(caps.hours || 40));
-        const attendanceModifier = policy.ATTENDANCE_MODIFIER || {};
-
-        const wCompletionRate = Number(weights.completionRate ?? 0.20);
-        const wAbsoluteVolume = Number(weights.absoluteVolume ?? 0.30);
-        const wExecutionQuality = Number(weights.executionQuality ?? 0.20);
-        const wMissPenalty = Number(weights.missPenalty ?? 0.10);
-        const wPostponedPenalty = Number(weights.postponedPenalty ?? 0.02);
-        const wPlanningBreadth = Number(weights.planningBreadth ?? 0.15);
         const expectedWeeklyTasks = Math.max(1, Number(policy.EXPECTED_WEEKLY_TASKS || 5));
-        const qualityChars = Math.max(1, Number(caps.qualityChars ?? 500));
-        const defaultActivityScore = Math.min(100, Math.max(0, Number(policy.DEFAULT_ACTIVITY_SCORE ?? 70)));
+        const expectedTasks = Math.max(1, Math.round(expectedWeeklyTasks * (windowDays / 7)));
 
-        const modifierBase = Number(attendanceModifier.base ?? 0.9);
-        const modifierMaxBonus = Number(attendanceModifier.maxBonus ?? 0.15);
-        const modifierConsistencyImpact = Number(attendanceModifier.consistencyImpact ?? 0.65);
-        const modifierEffortImpact = Number(attendanceModifier.effortImpact ?? 0.35);
+        // Performance dimension weights (same as Performance widget)
+        const wPunctuality = 0.15;
+        const wAttendance = 0.20;
+        const wTaskExecution = 0.25;
+        const wProductivity = 0.15;
+        const wPlanning = 0.15;
+        const wCompliance = 0.10;
 
         const attendanceMap = new Map(attendanceStats.map((row) => [String(row.userId), row]));
         const allUserIds = new Set([...attendanceMap.keys(), ...taskStats.keys()]);
-        const maxPlannedTasks = Math.max(1, ...Array.from(taskStats.values(), (tasks) => Math.max(0, Number(tasks?.planned) || 0)));
+
+        // Build lookup for raw logs by userId
+        const logsByUser = new Map();
+        (rawLogs || []).forEach(log => {
+            const uid = String(log?.userId || log?.user_id || '');
+            if (!uid) return;
+            if (!logsByUser.has(uid)) logsByUser.set(uid, []);
+            logsByUser.get(uid).push(log);
+        });
+
+        // Build lookup for raw work plans by userId
+        const plansByUser = new Map();
+        (rawWorkPlans || []).forEach(wp => {
+            const uid = String(wp?.userId || wp?.user_id || '');
+            if (!uid) return;
+            if (!plansByUser.has(uid)) plansByUser.set(uid, []);
+            plansByUser.get(uid).push(wp);
+        });
+
+        // Date range for deduplication — use the actual dataset range
+        const rangeStart = dateRange?.start ? new Date(dateRange.start) : (() => { const d = new Date(); d.setDate(d.getDate() - windowDays); d.setHours(0, 0, 0, 0); return d; })();
+        const rangeEnd = dateRange?.end ? new Date(dateRange.end) : (() => { const d = new Date(); d.setHours(23, 59, 59, 999); return d; })();
 
         return Array.from(allUserIds).map((userId) => {
             const attendance = attendanceMap.get(String(userId)) || {
@@ -1348,66 +1395,126 @@ export class Analytics {
             };
             const tasks = taskStats.get(String(userId)) || { planned: 0, completed: 0, inProgress: 0, missed: 0, postponed: 0 };
 
-            const days = attendance.daysSet.size;
-            const hoursValue = attendance.totalDurationMs / (1000 * 60 * 60);
-            const planned = Math.max(0, Number(tasks.planned) || 0);
-            const completed = Math.max(0, Number(tasks.completed) || 0);
-            const postponed = Math.max(0, Number(tasks.postponed) || 0);
-            const inProgress = Math.max(0, Number(tasks.inProgress) || 0);
-            const missed = Math.max(0, Number(tasks.missed) || 0);
-            
-            const completionRate = planned > 0 ? (completed / planned) * 100 : 0;
-            const planningScore = Math.max(0, Math.min(100, (planned / maxPlannedTasks) * 100));
+            // Get raw logs and work plans for this user
+            const userRawLogs = logsByUser.get(userId) || [];
+            const userRawPlans = plansByUser.get(userId) || [];
 
-            const absoluteVolumeScore = Math.min(completed / expectedWeeklyTasks, 1) * 100;
-            // Work-log depth (activityLogDepth) rewards detailed daily work descriptions.
-            // It is blended into execution quality and capped by CAPS.qualityChars; staff whose
-            // detail exceeds the cap receive the DEFAULT_ACTIVITY_SCORE baseline.
-            const depthBonus = Math.min(1, (Number(attendance.activityLogDepth) || 0) / qualityChars);
-            const workLogQuality = Math.round(depthBonus * defaultActivityScore);
-            const executionQualityScore = planned > 0
-                ? Math.max(0, Math.min(100, ((completed + (inProgress * 0.3)) / planned) * 100))
-                : workLogQuality;
-            const missPenaltyScore = planned > 0
-                ? Math.max(0, Math.min(100, (missed / planned) * 100))
-                : 0;
-            const postponedPenaltyScore = planned > 0
-                ? Math.max(0, Math.min(100, (postponed / planned) * 100))
-                : 0;
+            // Deduplicate logs (one per day, same as Performance widget)
+            const dedupedLogs = this.pickBestAttendanceLogPerDay(userRawLogs, rangeStart, rangeEnd);
 
-            const consistencyScore = Math.min(100, (days / windowDays) * 100);
-            const effortScore = Math.min((hoursValue / hourCap) * 100, 100);
+            // ── PUNCTUALITY (0–100) ──
+            const lateDays = dedupedLogs.filter(l => l.lateCountable === true || String(l.type || '').toLowerCase() === 'late').length;
+            const totalDays = dedupedLogs.length;
+            const punctuality = totalDays > 0
+                ? Math.max(0, Math.round(((totalDays - lateDays) / totalDays) * 100))
+                : 50;
 
-            const taskScore = (completionRate * wCompletionRate)
-                + (absoluteVolumeScore * wAbsoluteVolume)
-                + (executionQualityScore * wExecutionQuality)
-                - (missPenaltyScore * wMissPenalty)
-                - (postponedPenaltyScore * wPostponedPenalty)
-                + (planningScore * wPlanningBreadth);
-            
-            const attendanceReliability = ((consistencyScore / 100) * modifierConsistencyImpact)
-                + ((effortScore / 100) * modifierEffortImpact);
-            const attendanceBoost = Math.max(0, Math.min(modifierMaxBonus, attendanceReliability * modifierMaxBonus));
-            const attendanceFactor = Math.max(0.5, modifierBase + attendanceBoost);
-            const finalScore = taskScore * attendanceFactor;
+            // ── ATTENDANCE (0–100) ──
+            const daysWorked = attendance.daysSet.size;
+            const attendanceScore = Math.min(100, Math.round((daysWorked / windowDays) * 100));
+
+            // ── TASK EXECUTION (0–100) ──
+            // Count tasks from raw work plans (same logic as _computeWeekPerformance)
+            let taskPlanned = 0, taskCompleted = 0, taskMissed = 0, taskPostponed = 0, taskInProgress = 0;
+            let onTimeCompleted = 0;
+            userRawPlans.forEach(wp => {
+                if (!Array.isArray(wp?.plans)) return;
+                wp.plans.forEach(task => {
+                    if (!task || task.isRemoved === true) return;
+                    if (!String(task.task || '').trim()) return;
+                    taskPlanned++;
+                    const status = this.classifyHeroTaskStatus(task.status, wp.date);
+                    if (status === 'completed') {
+                        taskCompleted++;
+                        if (task.completedDate && wp.date) {
+                            const diffMs = new Date(task.completedDate).getTime() - new Date(wp.date + 'T23:59:59').getTime();
+                            if (diffMs <= 0) onTimeCompleted++;
+                        } else {
+                            onTimeCompleted++;
+                        }
+                    } else if (status === 'missed') taskMissed++;
+                    else if (status === 'postponed') taskPostponed++;
+                    else taskInProgress++;
+                });
+            });
+            // Fallback to aggregated stats if raw plans produced nothing
+            if (taskPlanned === 0) {
+                taskPlanned = tasks.planned; taskCompleted = tasks.completed;
+                taskMissed = tasks.missed; taskPostponed = tasks.postponed;
+                taskInProgress = tasks.inProgress;
+                onTimeCompleted = tasks.completed; // best guess
+            }
+            const completionRate = taskPlanned > 0 ? (taskCompleted / taskPlanned) * 100 : 0;
+            const onTimeRate = taskCompleted > 0 ? (onTimeCompleted / taskCompleted) * 100 : 100;
+            const missRate = taskPlanned > 0 ? (taskMissed / taskPlanned) * 100 : 0;
+            const taskExecution = Math.max(0, Math.min(100, Math.round(
+                completionRate * 0.5 + onTimeRate * 0.2 - missRate * 0.3
+            )));
+
+            // ── PRODUCTIVITY (0–100) ──
+            const activityScores = dedupedLogs.map(l => Number(l.activityScore)).filter(s => Number.isFinite(s));
+            const avgActivity = activityScores.length > 0
+                ? activityScores.reduce((a, b) => a + b, 0) / activityScores.length : 50;
+            const totalExtraMs = dedupedLogs.reduce((sum, l) => {
+                const type = String(l?.type || '');
+                if (type.includes('Leave') || type === 'Absent') return sum;
+                const confirmed = typeof l?.extraTimeConfirmedMs === 'number' && l.extraTimeConfirmedMs > 0 ? l.extraTimeConfirmedMs : 0;
+                const stored = typeof l?.extraWorkedMs === 'number' && l.extraWorkedMs > 0 ? l.extraWorkedMs : 0;
+                return sum + (confirmed || stored);
+            }, 0);
+            const extraHours = totalExtraMs / (1000 * 60 * 60);
+            const workDescDepth = dedupedLogs.reduce((sum, l) => sum + String(l?.workDescription || '').length, 0);
+            const depthScore = Math.min(100, (workDescDepth / Math.max(1, totalDays * 200)) * 100);
+            const expectedExtraHours = Math.max(1, windowDays * 0.5);
+            const extraHoursScore = Math.min(100, (extraHours / expectedExtraHours) * 100);
+            const productivity = Math.round(avgActivity * 0.4 + extraHoursScore * 0.3 + depthScore * 0.3);
+
+            // ── PLANNING (0–100) ──
+            const planVolume = Math.min(100, (taskPlanned / expectedTasks) * 100);
+            const subPlanCount = userRawPlans.reduce((sum, wp) =>
+                sum + (Array.isArray(wp?.plans) ? wp.plans.filter(t =>
+                    Array.isArray(t?.subPlans) && t.subPlans.length > 0
+                ).length : 0), 0
+            );
+            const subPlanScore = Math.min(100, subPlanCount * 20);
+            const planning = Math.round(planVolume * 0.6 + subPlanScore * 0.2 + (taskCompleted > 0 ? 20 : 0));
+
+            // ── COMPLIANCE (0–100) ──
+            const locationMismatches = dedupedLogs.filter(l => l.locationMismatched === true).length;
+            const autoCheckouts = dedupedLogs.filter(l => l.autoCheckout === true).length;
+            const compliance = Math.max(0, Math.min(100, Math.round(100
+                - (totalDays > 0 ? (locationMismatches / totalDays) * 50 : 0)
+                - (totalDays > 0 ? (autoCheckouts / totalDays) * 50 : 0)
+            )));
+
+            // ── COMPOSITE (same formula as Performance widget) ──
+            const finalScore = Math.round(
+                punctuality * wPunctuality
+                + attendanceScore * wAttendance
+                + taskExecution * wTaskExecution
+                + productivity * wProductivity
+                + planning * wPlanning
+                + compliance * wCompliance
+            );
 
             return {
                 userId,
-                days,
-                hours: Number(hoursValue.toFixed(1)),
+                days: daysWorked,
+                hours: Number((attendance.totalDurationMs / (1000 * 60 * 60)).toFixed(1)),
                 totalDurationMs: Math.max(0, Number(attendance.totalDurationMs) || 0),
                 activityLogDepth: attendance.activityLogDepth,
-                taskPlanned: planned,
-                taskCompleted: completed,
-                taskInProgress: inProgress,
-                taskMissed: missed,
-                taskPostponed: postponed,
-                taskPlanningScore: Number(planningScore.toFixed(1)),
+                taskPlanned,
+                taskCompleted,
+                taskInProgress,
+                taskMissed,
+                taskPostponed,
                 completionRate: Number(completionRate.toFixed(1)),
-                absoluteVolumeScore: Number(absoluteVolumeScore.toFixed(1)),
-                workLogQuality: Number(workLogQuality),
-                taskScore: Number(Math.max(0, taskScore).toFixed(2)),
-                attendanceFactor: Number(attendanceFactor.toFixed(3)),
+                punctuality,
+                attendanceScore,
+                taskExecution,
+                productivity,
+                planning,
+                compliance,
                 finalScore: Number(Math.max(0, finalScore).toFixed(2))
             };
         }).sort((a, b) => {
@@ -1491,7 +1598,10 @@ export class Analytics {
             const ranked = this.rankHeroCandidates(
                 this.buildHeroCandidateStats(normalizedLogs),
                 taskStats,
-                policy
+                policy,
+                dataset.logs,
+                dataset.workPlans,
+                { start: dataset.start, end: dataset.end }
             );
             const taskBuckets = this.buildHeroTaskBuckets(normalizedTasks);
             const rankedMap = new Map(ranked.map((row, index) => [String(row.userId), { ...row, rank: index + 1 }]));
@@ -2047,6 +2157,7 @@ export class Analytics {
     try {
         const windowDays = Math.max(1, Number(options.windowDays ?? 7));
         const trendWeeks = Math.max(1, Number(options.trendWeeks ?? 4));
+        const useCalendarMonth = options.calendarMonth === true;
         const policy = this.getHeroPolicy();
         const weights = policy.WEIGHTS || {};
         const caps = policy.CAPS || {};
@@ -2062,7 +2173,16 @@ export class Analytics {
         // Build date ranges — non-overlapping windows, step = windowDays
         const now = new Date();
         const windows = [];
-        if (windowDays >= 365) {
+        if (useCalendarMonth) {
+            // Calendar month: current month as primary, previous 3 months for trend
+            for (let i = 0; i < trendWeeks; i++) {
+                const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
+                const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+                const label = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                windows.push({ start: monthStart, end: monthEnd, label, index: i });
+            }
+        } else if (windowDays >= 365) {
             // Yearly: single year window + 12 monthly trend points
             const yearStart = new Date(now.getFullYear(), 0, 1);
             const yearEnd = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
@@ -2113,18 +2233,27 @@ export class Analytics {
 
         // Compute scores for each window
         const windowScores = windows.map((win, i) => {
-            const userLogs = filterUser(attendanceChunks[i] || []);
+            let userLogs = filterUser(attendanceChunks[i] || []);
+            // Deduplicate: one log per day (same as Monthly Stats)
+            userLogs = this.pickBestAttendanceLogPerDay(userLogs, win.start, win.end);
             const userPlans = (workPlanChunks[i] || []).filter(p =>
                 String(p?.userId || p?.user_id || '') === String(userId)
             );
             return this._computeWeekPerformance(userLogs, userPlans, win, {
                 wPunctuality, wAttendance, wTaskExecution, wProductivity, wPlanning, wCompliance,
-                windowDays, caps, weights, policy
+                windowDays: useCalendarMonth ? Math.max(1, Math.round((win.end - win.start) / (1000 * 60 * 60 * 24)) + 1) : windowDays,
+                caps, weights, policy
             });
         });
 
         // Current week is index 0 (most recent)
         const current = windowScores[0] || this._emptyPerformance();
+
+        // Get the SAME attendance stats that getUserMonthlyStats() returns
+        // so both the Performance widget and Monthly Stats card show identical numbers
+        const currentUserLogs = filterUser(attendanceChunks[0] || []);
+        const canonicalUserLogs = this.pickBestAttendanceLogPerDay(currentUserLogs, windows[0].start, windows[0].end);
+        const currentStats = this.calculateStatsForLogs(canonicalUserLogs);
 
         // Build trend (index 0 = oldest, ascending chronological, max 6 points)
         const trend = windowScores.slice().reverse().slice(-6).map((ws, i) => ({
@@ -2132,14 +2261,15 @@ export class Analytics {
             score: ws.composite
         }));
 
-        // Insights
-        const insights = this._generatePerformanceInsights(current, trend, userId, windowDays);
+        // Insights (use same stats as Monthly Stats for consistency)
+        const insights = this._generatePerformanceInsights(current, trend, userId, windowDays, currentStats);
 
         return {
             userId,
             composite: current.composite,
             dimensions: current.dimensions,
             details: current.details,
+            stats: currentStats,
             trend,
             insights,
             windowDays,
@@ -2206,9 +2336,14 @@ export class Analytics {
         const avgActivity = activityScores.length > 0
             ? activityScores.reduce((a, b) => a + b, 0) / activityScores.length
             : 50;
-        const totalExtraMs = userLogs.reduce((sum, l) =>
-            sum + Number(l?.extraTimeConfirmedMs || l?.extraWorkedMs || 0), 0
-        );
+        // Count extra hours only from working-day logs (same logic as Monthly Stats)
+        const totalExtraMs = userLogs.reduce((sum, l) => {
+            const type = String(l?.type || '');
+            if (type.includes('Leave') || type === 'Absent') return sum;
+            const confirmed = typeof l?.extraTimeConfirmedMs === 'number' && l.extraTimeConfirmedMs > 0 ? l.extraTimeConfirmedMs : 0;
+            const stored = typeof l?.extraWorkedMs === 'number' && l.extraWorkedMs > 0 ? l.extraWorkedMs : 0;
+            return sum + (confirmed || stored);
+        }, 0);
         const extraHours = totalExtraMs / (1000 * 60 * 60);
         const workDescDepth = userLogs.reduce((sum, l) =>
             sum + String(l?.workDescription || '').length, 0
@@ -2287,7 +2422,7 @@ export class Analytics {
         };
     }
 
-    _generatePerformanceInsights(current, trend, userId, windowDays = 7) {
+    _generatePerformanceInsights(current, trend, userId, windowDays = 7, sharedStats = null) {
         const insights = [];
         const dims = current.dimensions || {};
         const details = current.details || {};
@@ -2321,9 +2456,10 @@ export class Analytics {
             else insights.push({ type: 'neutral', text: `Stable performance this ${periodLabel}` });
         }
 
-        // Late days
-        if (details.lateDays > 0) {
-            insights.push({ type: 'warning', text: `${details.lateDays} late day${details.lateDays > 1 ? 's' : ''} this ${periodLabel}` });
+        // Late days (use shared stats for consistency with Monthly Stats)
+        const lateCount = sharedStats?.late ?? details.lateDays;
+        if (lateCount > 0) {
+            insights.push({ type: 'warning', text: `${lateCount} late day${lateCount > 1 ? 's' : ''} this ${periodLabel}` });
         }
 
         // Missed tasks
@@ -2331,9 +2467,10 @@ export class Analytics {
             insights.push({ type: 'improve', text: `${details.taskMissed} task${details.taskMissed > 1 ? 's' : ''} missed — review and reschedule` });
         }
 
-        // Extra hours
-        if (details.extraHours > 2) {
-            insights.push({ type: 'positive', text: `${details.extraHours}h extra hours contributed` });
+        // Extra hours (use shared stats for consistency with Monthly Stats)
+        const extraHrs = sharedStats?.extraWorkedHours ?? details.extraHours;
+        if (extraHrs > 2) {
+            insights.push({ type: 'positive', text: `${extraHrs}h extra hours contributed` });
         }
 
         return insights;

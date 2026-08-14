@@ -770,7 +770,12 @@ export function renderHeroCard(heroData, heroMeta = {}) {
     const taskPostponed = Number(stats?.taskPostponed ?? 0);
     const attendanceDays = Number(stats?.days ?? 0);
     const attendanceHours = Number(stats?.hours ?? 0);
-    const attendanceFactor = Number(stats?.attendanceFactor ?? 1);
+    const punctualityScore = Number(stats?.punctuality ?? 0);
+    const attendanceScore = Number(stats?.attendanceScore ?? 0);
+    const taskExecScore = Number(stats?.taskExecution ?? 0);
+    const productivityScore = Number(stats?.productivity ?? 0);
+    const planningScore = Number(stats?.planning ?? 0);
+    const complianceScore = Number(stats?.compliance ?? 0);
     const isNew = heroMeta.source === 'generated';
     const confidencePct = Number.isFinite(Number(heroData?.confidence))
         ? Math.round(Number(heroData.confidence) * 100)
@@ -826,7 +831,15 @@ export function renderHeroCard(heroData, heroMeta = {}) {
                 <div class="hero-attendance-modifier-row">
                     <span class="hero-attendance-pill">Days <strong>${attendanceDays}</strong></span>
                     <span class="hero-attendance-pill">Hours <strong>${attendanceHours}h</strong></span>
-                    <span class="hero-attendance-pill">Factor <strong>x${attendanceFactor.toFixed(2)}</strong></span>
+                    <span class="hero-attendance-pill hero-score-pill">Score <strong>${stats?.finalScore ?? 0}</strong></span>
+                </div>
+                <div class="hero-dims-row">
+                    <span class="hero-dim-tag" title="Punctuality">🕐 ${punctualityScore}</span>
+                    <span class="hero-dim-tag" title="Attendance">📅 ${attendanceScore}</span>
+                    <span class="hero-dim-tag" title="Task Execution">📋 ${taskExecScore}</span>
+                    <span class="hero-dim-tag" title="Productivity">⚡ ${productivityScore}</span>
+                    <span class="hero-dim-tag" title="Planning">📊 ${planningScore}</span>
+                    <span class="hero-dim-tag" title="Compliance">🛡️ ${complianceScore}</span>
                 </div>
             </div>
             <div class="dashboard-hero-stats-foot">
@@ -1028,7 +1041,6 @@ function renderHeroLeaderboardExpanded(leaderboardData, heroData = null) {
                 <td>${Number(stats.days || 0)}</td>
                 <td>${Number(stats.hours || 0).toFixed(1)}h</td>
                 <td>${Number(stats.completionRate || 0).toFixed(1)}%</td>
-                <td>x${Number(stats.attendanceFactor || 1).toFixed(2)}</td>
                 <td>${Number(stats.finalScore || 0).toFixed(2)}</td>
                 <td><span class="hero-leaderboard-pill ${eligibilityClass}">${eligibilityText}</span></td>
             </tr>
@@ -1061,7 +1073,6 @@ function renderHeroLeaderboardExpanded(leaderboardData, heroData = null) {
                             <th>Days</th>
                             <th>Hours</th>
                             <th>Completion</th>
-                            <th>Factor</th>
                             <th>Score</th>
                             <th>Status</th>
                         </tr>
@@ -1572,7 +1583,15 @@ function buildStatsDetailBuckets(logs, range) {
             buckets.breakdown['Late'].add(dateStr);
         }
         if (!isManual) {
-            if (outMinutes !== null && outMinutes < earlyDeparture && !String(type).includes('Leave') && type !== 'Absent') {
+            // Skip holidays, Sundays, off-Saturdays from early departure
+            const isOffDay = (() => {
+                if (!logDate) return false;
+                if (logDate.getDay() === 0) return true;
+                if (logDate.getDay() === 6 && typeof AppConfig !== 'undefined' && AppConfig && typeof AppConfig.IS_SATURDAY_OFF === 'function' && AppConfig.IS_SATURDAY_OFF(logDate)) return true;
+                if (window.AppAnalytics && typeof window.AppAnalytics.isConfiguredHoliday === 'function' && window.AppAnalytics.isConfiguredHoliday(dateStr)) return true;
+                return false;
+            })();
+            if (outMinutes !== null && outMinutes < earlyDeparture && !String(type).includes('Leave') && type !== 'Absent' && !isOffDay) {
                 buckets.early.add(dateStr);
                 buckets.breakdown['Early Departure'].add(dateStr);
             }
@@ -1585,7 +1604,14 @@ function buildStatsDetailBuckets(logs, range) {
             ? Math.max(0, Math.round(log.extraWorkedMs / (1000 * 60)))
             : 0;
         const allowExtra = !(log.autoCheckout && !log.autoCheckoutExtraApproved);
-        const hasExtra = storedExtraMinutes > 0 || (allowExtra && ((inMinutes !== null && inMinutes < lateCutoff) || (outMinutes !== null && outMinutes > earlyDeparture)));
+        const logIsHoliday = (() => {
+            if (!logDate) return false;
+            if (logDate.getDay() === 0) return true;
+            if (logDate.getDay() === 6 && typeof AppConfig !== 'undefined' && AppConfig && typeof AppConfig.IS_SATURDAY_OFF === 'function' && AppConfig.IS_SATURDAY_OFF(logDate)) return true;
+            if (window.AppAnalytics && typeof window.AppAnalytics.isConfiguredHoliday === 'function' && window.AppAnalytics.isConfiguredHoliday(dateStr)) return true;
+            return false;
+        })();
+        const hasExtra = storedExtraMinutes > 0 || (allowExtra && (logIsHoliday || (inMinutes !== null && inMinutes < lateCutoff) || (outMinutes !== null && outMinutes > earlyDeparture)));
         if (hasExtra) buckets.extra.add(dateStr);
 
         if (type === 'Work - Home') buckets.breakdown['Work - Home'].add(dateStr);
@@ -2497,6 +2523,13 @@ export async function renderDashboard() {
                                 </div>
                             </div>
                             <div class="dashboard-checkin-timer-wrap">
+                                <div class="clock-ring" id="clock-ring">
+                                    <div class="clock-ring-track"></div>
+                                    <div class="clock-hand clock-hand-hour" id="clock-hour"></div>
+                                    <div class="clock-hand clock-hand-minute" id="clock-minute"></div>
+                                    <div class="clock-hand clock-hand-second" id="clock-second"></div>
+                                    <div class="clock-center-dot"></div>
+                                </div>
                                 <div class="timer-display dashboard-checkin-timer" id="timer-display">${timerHTML}</div>
                                 <div id="timer-label" class="dashboard-checkin-timer-label">Elapsed Time Today</div>
                             </div>

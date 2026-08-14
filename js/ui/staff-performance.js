@@ -143,14 +143,18 @@ function insightsHtml(insights) {
 }
 
 // ─── Detail Chips (quick stats) ────────────────────────────────
-function detailChipsHtml(details) {
+function detailChipsHtml(details, stats) {
     if (!details || Object.keys(details).length === 0) return '';
     const chips = [];
-    if (details.daysWorked) chips.push(`<span class="perf-chip"><i class="fa-solid fa-calendar"></i> ${details.daysWorked} days worked</span>`);
+    // Use stats (same source as Monthly Stats card) for attendance metrics
+    const daysWorked = stats?.present ?? details.daysWorked;
+    const extraHours = stats?.extraWorkedHours ?? details.extraHours;
+    const lateCount = stats?.late ?? details.lateDays;
+    if (daysWorked) chips.push(`<span class="perf-chip"><i class="fa-solid fa-calendar"></i> ${daysWorked} days worked</span>`);
     if (details.taskCompleted) chips.push(`<span class="perf-chip perf-chip-green"><i class="fa-solid fa-check"></i> ${details.taskCompleted} completed</span>`);
     if (details.taskInProgress) chips.push(`<span class="perf-chip perf-chip-blue"><i class="fa-solid fa-spinner"></i> ${details.taskInProgress} in progress</span>`);
     if (details.taskMissed) chips.push(`<span class="perf-chip perf-chip-red"><i class="fa-solid fa-xmark"></i> ${details.taskMissed} missed</span>`);
-    if (details.extraHours > 0) chips.push(`<span class="perf-chip perf-chip-purple"><i class="fa-solid fa-clock"></i> ${details.extraHours}h extra</span>`);
+    if (extraHours > 0) chips.push(`<span class="perf-chip perf-chip-purple"><i class="fa-solid fa-clock"></i> ${extraHours}h extra</span>`);
     if (details.avgActivity) chips.push(`<span class="perf-chip"><i class="fa-solid fa-bolt"></i> ${details.avgActivity}% activity</span>`);
 
     return chips.length > 0
@@ -181,7 +185,7 @@ function scoreRingHtml(score) {
 // ─── Period config ───────────────────────────────────────────────
 const PERF_PERIODS = [
     { key: 'week', label: 'This Week', windowDays: 7, trendWeeks: 1 },
-    { key: 'month', label: 'This Month', windowDays: 30, trendWeeks: 4 },
+    { key: 'month', label: 'This Month', windowDays: 30, trendWeeks: 4, calendarMonth: true },
     { key: 'year', label: 'This Year', windowDays: 365, trendWeeks: 12 }
 ];
 
@@ -203,7 +207,7 @@ window.app_switchPersonalPerf = async (periodKey) => {
     // Show loading state
     container.querySelector('.perf-main-layout').style.opacity = '0.4';
     try {
-        const perfData = await window.AppAnalytics.getPersonalPerformance(_personalPerfUserId, { windowDays: period.windowDays, trendWeeks: period.trendWeeks });
+        const perfData = await window.AppAnalytics.getPersonalPerformance(_personalPerfUserId, { windowDays: period.windowDays, trendWeeks: period.trendWeeks, calendarMonth: period.calendarMonth || false });
         if (perfData) {
             cleanupPerformanceChart();
             container.outerHTML = renderStaffPerformance(perfData, { windowDays: period.windowDays, period: periodKey });
@@ -235,7 +239,7 @@ export function renderStaffPerformance(perfData, options = {}) {
             <div class="dashboard-perf-head">
                 <div>
                     <h4 class="dashboard-perf-title">Your Performance</h4>
-                    <span class="dashboard-perf-subtitle">${safeHtml(period.label)} · ${options.windowDays || period.windowDays}-day window</span>
+                    <span class="dashboard-perf-subtitle">${safeHtml(period.calendarMonth ? (perfData.trend?.[perfData.trend.length - 1]?.week || period.label) : `${period.label} · ${options.windowDays || period.windowDays}-day window`)}</span>
                 </div>
             </div>
 
@@ -253,7 +257,7 @@ export function renderStaffPerformance(perfData, options = {}) {
                     <div class="perf-dims">
                         ${Object.values(dimensions || {}).map(d => dimBarHtml(d)).join('')}
                     </div>
-                    ${detailChipsHtml(details)}
+                    ${detailChipsHtml(details, perfData.stats)}
                 </div>
             </div>
 
@@ -351,7 +355,7 @@ async function fetchTeamPerformance(allUsers, periodKey) {
         const batch = allUsers.slice(i, i + BATCH);
         const batchResults = await Promise.all(
             batch.map(u => withTimeout(
-                analytics.getPersonalPerformance(u.id, { windowDays: period.windowDays, trendWeeks: period.trendWeeks }),
+                analytics.getPersonalPerformance(u.id, { windowDays: period.windowDays, trendWeeks: period.trendWeeks, calendarMonth: period.calendarMonth || false }),
                 TIMEOUT_MS
             ).catch(e => { console.warn('[Perf]', u.name, period.key, e.message); return null; }))
         );
