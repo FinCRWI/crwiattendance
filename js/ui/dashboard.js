@@ -2504,7 +2504,13 @@ export async function renderDashboard() {
                 </div>
             </div>
 
-            ${overdueTaskStripHTML ? `<div class="dashboard-hero-missed-corner-wrap">${overdueTaskStripHTML}</div>` : ''}
+            <div class="dashboard-hero-missed-corner-wrap">
+                <a href="#kanban" class="dashboard-quick-link-pill">
+                    <i class="fa-solid fa-columns"></i>
+                    <span>Task Board</span>
+                </a>
+                ${overdueTaskStripHTML || ''}
+            </div>
 
             <!-- ── Bento Grid Layout ── -->
             <div class="modern-bento-grid">

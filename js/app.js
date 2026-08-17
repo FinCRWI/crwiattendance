@@ -9,6 +9,7 @@ import './modules/system-dialog.js';
 import { escapeHtml as app_escapeHtml, escapeJsSingleQuote as app_escapeJsSingleQuote, escapeDialogHtml } from './utils/html-escape.js';
 import { getLocalISO } from './utils/date-helpers.js';
 import AppUI from './ui.js';
+import { telegramNotifyLeaveUpdate, telegramNotifyTaskTagged } from './utils/telegram.js';
 import './modules/calendar.js';
 import { buildCheckoutTaskMutation } from './modules/checkout-task-updates.js';
 import './modules/activity.js';
@@ -27,7 +28,6 @@ import './modules/admin-policies.js';
 import './modules/day-plan.js';
 import './modules/widget.js';
 import './ui/site-announcement.js';
-
 // Local aliases so legacy bare references inside this file keep working.
 const app_normalizeBudgetHeadId = window.app_normalizeBudgetHeadId;
 
@@ -720,8 +720,6 @@ window.addEventListener('load', () => {
 document.addEventListener('DOMContentLoaded', () => {
     try { window.app_applyShowHiddenSheetsToggle(); } catch (err) { void err; }
     try { if (typeof window.app_initSectionToggle === 'function') window.app_initSectionToggle(); } catch (err) { void err; }
-    // Also update navigation section visibility early so tests that set
-    // `show_hidden_sheets` in localStorage before scripts run will take effect.
     try { if (typeof window.app_updateNavigationSections === 'function') window.app_updateNavigationSections(); } catch (err) { void err; }
 }, { once: true });
 
@@ -3366,6 +3364,9 @@ async function router() {
         minutesListenerUnsubscribe();
         minutesListenerUnsubscribe = null;
     }
+    if (hash !== 'kanban' && typeof AppUI?.stopKanbanRealtimeListener === 'function') {
+        AppUI.stopKanbanRealtimeListener();
+    }
 
     // AUTH GUARD
     if (!user) {
@@ -3544,6 +3545,12 @@ async function router() {
                 return;
             }
             contentArea.innerHTML = await AppUI.renderStaffAiMemorySheet();
+        } else if (hash === 'kanban') {
+            contentArea.innerHTML = await AppUI.renderKanbanBoard();
+            await AppUI.initKanbanBoard();
+            if (typeof AppUI.startKanbanRealtimeListener === 'function') {
+                AppUI.startKanbanRealtimeListener();
+            }
         }
         await window.app_syncBirthdayReminders?.();
         if (window.app_updateStaffNavIndicator) {
@@ -5944,6 +5951,8 @@ window.app_saveDayPlan = async (e, date, targetUserId = null) => {
                                         date: new Date().toLocaleString(),
                                         read: false
                                     });
+                                    // Telegram notification (fire-and-forget)
+                                    telegramNotifyTaskTagged(currentUser.name, p.task);
                                 }
                             }
                         });
@@ -9479,7 +9488,12 @@ window.app_approveLeave = async (leaveId) => {
     if (!await window.appConfirm("Are you sure you want to APPROVE this leave request?")) return;
     try {
         const user = window.AppAuth.getUser();
+        const leave = await window.AppDB.get('leaves', leaveId).catch(() => null);
         await window.AppLeaves.updateLeaveStatus(leaveId, 'Approved', user.id);
+        // Telegram notification (fire-and-forget)
+        if (leave && leave.staffName) {
+            telegramNotifyLeaveUpdate(leave.staffName, 'approved');
+        }
         alert("Leave Approved! Attendance logs have been automatically generated.");
         await app_refreshAfterLeaveAction();
     } catch (err) {
@@ -9497,7 +9511,12 @@ window.app_rejectLeave = async (leaveId) => {
 
     try {
         const user = window.AppAuth.getUser();
+        const leave = await window.AppDB.get('leaves', leaveId).catch(() => null);
         await window.AppLeaves.updateLeaveStatus(leaveId, 'Rejected', user.id, reason);
+        // Telegram notification (fire-and-forget)
+        if (leave && leave.staffName) {
+            telegramNotifyLeaveUpdate(leave.staffName, 'rejected');
+        }
         alert("Leave Rejected.");
         await app_refreshAfterLeaveAction();
     } catch (err) {

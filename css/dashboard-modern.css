@@ -1326,6 +1326,35 @@
 /* ── Hero of Week missed tasks overlay ────────────────────── */
 .modern-dashboard .dashboard-hero-missed-corner-wrap {
   margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* Quick-link pill (Task Board) */
+.dashboard-quick-link-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  background: rgba(63, 99, 168, 0.06);
+  border: 1px solid rgba(63, 99, 168, 0.15);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--primary);
+  text-decoration: none;
+  transition: all 0.2s;
+  pointer-events: auto;
+}
+.dashboard-quick-link-pill i {
+  font-size: 0.7rem;
+}
+.dashboard-quick-link-pill:hover {
+  background: rgba(63, 99, 168, 0.12);
+  border-color: rgba(63, 99, 168, 0.25);
 }
 
 .modern-dashboard .dashboard-hero-missed-corner-wrap .dashboard-missed-strip {

@@ -39,6 +39,8 @@ import { renderDashboardSectionPage, initDashboardSectionPage } from './ui/dashb
 import { renderLetterPad } from './ui/letter-pad.js';
 import { renderJourneyReflectionCard } from './ui/journey-reflection.js';
 import { initDashboardLayout, toggleEditMode, applyDashboardLayout, isEditModeActive } from './ui/dashboard-layout.js';
+import { renderKanbanBoard, initKanbanBoard, startKanbanRealtimeListener, stopKanbanRealtimeListener } from './ui/kanban-board.js';
+import { renderViewToggle, initViewToggle, ensureViewToggleCSS } from './ui/view-toggle.js';
 
 // Re-export for ESM usage
 export {
@@ -80,7 +82,14 @@ export {
     initDashboardLayout,
     toggleEditMode,
     applyDashboardLayout,
-    isEditModeActive
+    isEditModeActive,
+    renderKanbanBoard,
+    initKanbanBoard,
+    startKanbanRealtimeListener,
+    stopKanbanRealtimeListener,
+    renderViewToggle,
+    initViewToggle,
+    ensureViewToggleCSS
 };
 
 export const AppUI = {
@@ -122,7 +131,14 @@ export const AppUI = {
     initDashboardLayout,
     toggleEditMode,
     applyDashboardLayout,
-    isEditModeActive
+    isEditModeActive,
+    renderKanbanBoard,
+    initKanbanBoard,
+    startKanbanRealtimeListener,
+    stopKanbanRealtimeListener,
+    renderViewToggle,
+    initViewToggle,
+    ensureViewToggleCSS
 };
 
 

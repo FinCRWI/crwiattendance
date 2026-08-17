@@ -120,8 +120,8 @@
             document.body.appendChild(div);
         });
     </script>
-  <script type="module" crossorigin src="/assets/main-DlCU6ogG.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/main-CH2iVFlQ.css">
+  <script type="module" crossorigin src="/assets/main-r1ayM8ZC.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/main-fVOL-Bn4.css">
 </head>
 
 <body>
@@ -133,10 +133,12 @@
         <aside class="sidebar">
             <div class="sidebar-header">
                 <h2>CRWI Attendance</h2>
-                <button class="desktop-toggle-btn" id="desktop-sidebar-toggle" onclick="window.app_toggleSidebar()"
-                    title="Toggle Sidebar">
-                    <i class="fa-solid fa-angles-left"></i>
-                </button>
+                <div class="sidebar-header-actions">
+                    <button class="desktop-toggle-btn" id="desktop-sidebar-toggle" onclick="window.app_toggleSidebar()"
+                        title="Toggle Sidebar">
+                        <i class="fa-solid fa-angles-left"></i>
+                    </button>
+                </div>
             </div>
 
             <nav class="sidebar-nav">
@@ -174,6 +176,10 @@
                         <a href="#team-activities" class="nav-item" data-page="team-activities">
                             <i class="fa-solid fa-chart-line"></i>
                             <span>Team Activities</span>
+                        </a>
+                        <a href="#kanban" class="nav-item" data-page="kanban">
+                            <i class="fa-solid fa-columns"></i>
+                            <span>Task Board</span>
                         </a>
                         <a href="#timesheet" class="nav-item" data-page="timesheet">
                             <i class="fa-solid fa-clock"></i>
@@ -343,6 +349,10 @@
                 <a href="#team-activities" class="mobile-nav-item" data-page="team-activities">
                     <i class="fa-solid fa-chart-line"></i>
                     <span>Activity</span>
+                </a>
+                <a href="#kanban" class="mobile-nav-item" data-page="kanban">
+                    <i class="fa-solid fa-columns"></i>
+                    <span>Board</span>
                 </a>
                 <a href="#staff-directory" class="mobile-nav-item" data-page="staff-directory">
                     <i class="fa-solid fa-users"></i>

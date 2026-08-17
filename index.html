@@ -34,6 +34,7 @@
     <link rel="stylesheet" href="css/journey-reflection.css?v=20260625-journey-reflection-v1">
     <link rel="stylesheet" href="css/day-plan.css?v=20260615-day-plan-scroll-v2">
     <link rel="stylesheet" href="css/dashboard-modern.css?v=20260725-bento-v1">
+    <link rel="stylesheet" href="css/kanban.css?v=20260816-kanban-v1">
 
     <!-- PWA -->
     <link rel="manifest" href="manifest.json">
@@ -140,10 +141,12 @@
         <aside class="sidebar">
             <div class="sidebar-header">
                 <h2>CRWI Attendance</h2>
-                <button class="desktop-toggle-btn" id="desktop-sidebar-toggle" onclick="window.app_toggleSidebar()"
-                    title="Toggle Sidebar">
-                    <i class="fa-solid fa-angles-left"></i>
-                </button>
+                <div class="sidebar-header-actions">
+                    <button class="desktop-toggle-btn" id="desktop-sidebar-toggle" onclick="window.app_toggleSidebar()"
+                        title="Toggle Sidebar">
+                        <i class="fa-solid fa-angles-left"></i>
+                    </button>
+                </div>
             </div>
 
             <nav class="sidebar-nav">
@@ -181,6 +184,10 @@
                         <a href="#team-activities" class="nav-item" data-page="team-activities">
                             <i class="fa-solid fa-chart-line"></i>
                             <span>Team Activities</span>
+                        </a>
+                        <a href="#kanban" class="nav-item" data-page="kanban">
+                            <i class="fa-solid fa-columns"></i>
+                            <span>Task Board</span>
                         </a>
                         <a href="#timesheet" class="nav-item" data-page="timesheet">
                             <i class="fa-solid fa-clock"></i>
@@ -350,6 +357,10 @@
                 <a href="#team-activities" class="mobile-nav-item" data-page="team-activities">
                     <i class="fa-solid fa-chart-line"></i>
                     <span>Activity</span>
+                </a>
+                <a href="#kanban" class="mobile-nav-item" data-page="kanban">
+                    <i class="fa-solid fa-columns"></i>
+                    <span>Board</span>
                 </a>
                 <a href="#staff-directory" class="mobile-nav-item" data-page="staff-directory">
                     <i class="fa-solid fa-users"></i>

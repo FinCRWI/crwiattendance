@@ -1,6 +1,7 @@
 import { AppAuth } from './auth.js';
 import { AppDB } from './db.js';
 import { AppConfig } from '../config.js';
+import { telegramNotifyCheckIn, telegramNotifyLateCheckIn, telegramNotifyCheckOut } from '../utils/telegram.js';
 
 const hasValidCoordinatePair = (lat, lng) => Number.isFinite(Number(lat)) && Number.isFinite(Number(lng));
 const normalizeDateKey = (value) => {
@@ -252,6 +253,21 @@ export class Attendance {
         user.currentBudgetHeadUnallocatedReason = String(options.unallocatedReason || '');
 
         await AppDB.put('users', user);
+
+        // Telegram notification (fire-and-forget)
+        try {
+            const userName = user.name || user.id || 'Staff';
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const hour = now.getHours();
+            const minute = now.getMinutes();
+            if (hour > 10 || (hour === 10 && minute > 0)) {
+                telegramNotifyLateCheckIn(userName, timeStr);
+            } else {
+                telegramNotifyCheckIn(userName, timeStr);
+            }
+        } catch { /* best-effort */ }
+
         return {
             ok: true,
             resolvedMissedCheckout,
@@ -445,6 +461,13 @@ export class Attendance {
         await AppDB.put('users', user);
 
         if (window.AppActivity) window.AppActivity.stop();
+
+        // Telegram notification (fire-and-forget)
+        try {
+            const userName = user.name || user.id || 'Staff';
+            const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            telegramNotifyCheckOut(userName, timeStr);
+        } catch { /* best-effort */ }
 
         return {
             ok: true,

@@ -39,6 +39,10 @@ function getTeamActivitiesState() {
             sortKey: 'date-desc',
             page: 1,
             pageSize: DEFAULT_PAGE_SIZE,
+            groupBy: 'none',
+            collapsedGroups: new Set(),
+            advancedFilters: [],
+            advancedLogic: 'AND',
             columnFilters: {
                 date: '',
                 staff: '',
@@ -245,6 +249,7 @@ function applyFilters(state) {
         return true;
     });
 
+    filtered = applyAdvancedFilters({ filtered, advancedFilters: state.advancedFilters, advancedLogic: state.advancedLogic });
     filtered = sortRows(filtered, state.sortKey);
     state.filtered = filtered;
     return filtered;
@@ -435,7 +440,7 @@ function renderTable(state) {
                     <button class="team-activities-row-btn" data-view-date="${safeHtml(row.date)}" data-view-user="${safeHtml(row.userId)}">
                         <i class="fa-solid fa-eye"></i> View
                     </button>
-                    ${row.type === 'work' && isOwner && isIncompleteStatus(row.status) && row.planId && Number.isInteger(row.taskIndex) ? `
+                    ${row.type === 'work' && (isOwner || canAdminDelete) && isIncompleteStatus(row.status) && row.planId && Number.isInteger(row.taskIndex) ? `
                         <button class="team-activities-row-btn warn" data-action="postpone" data-plan-id="${safeHtml(row.planId)}" data-task-index="${row.taskIndex}" data-plan-scope="${safeHtml(row.planScope)}" data-user-id="${safeHtml(row.userId)}" data-date="${safeHtml(row.date)}">
                             <i class="fa-solid fa-clock"></i> Postpone
                         </button>
@@ -450,6 +455,11 @@ function renderTable(state) {
                             <i class="fa-solid fa-trash"></i> Remove
                         </button>
                     ` : ''}
+                    ${row.type === 'work' && row.planId && Number.isInteger(row.taskIndex) ? `
+                        <button class="team-activities-row-btn secondary" data-action="link" data-plan-id="${safeHtml(row.planId)}" data-task-index="${row.taskIndex}" data-existing-link="${safeHtml(row.onedriveLink || '')}">
+                            <i class="fa-brands fa-microsoft"></i> ${row.onedriveLink ? 'Edit Link' : 'Attach Link'}
+                        </button>
+                    ` : ''}
                 </div>
             </td>
         </tr>
@@ -461,6 +471,7 @@ function renderTable(state) {
             <div><strong>${selected.size}</strong> selected</div>
             <div class="team-activities-bulk-actions">
                 <button type="button" class="team-activities-row-btn secondary" data-bulk-clear ${selected.size ? '' : 'disabled'}>Clear</button>
+                <button type="button" class="team-activities-row-btn success" data-bulk-complete ${selected.size ? '' : 'disabled'}>Bulk Complete</button>
                 <button type="button" class="team-activities-row-btn danger" data-bulk-remove ${selected.size ? '' : 'disabled'}>Bulk Remove</button>
             </div>
         </div>
@@ -499,7 +510,9 @@ function showInlineActionToast(anchorEl, message) {
 }
 
 function renderPagination(state) {
-    const total = state.filtered.length;
+    const total = state.groupBy !== 'none'
+        ? Object.values(state.groupedSections || {}).reduce((sum, arr) => sum + arr.length, 0)
+        : state.filtered.length;
     const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
     const current = Math.min(state.page, totalPages);
     return `
@@ -511,12 +524,142 @@ function renderPagination(state) {
     `;
 }
 
+function getGroupLabel(groupBy, value) {
+    if (!value || value === 'undefined') return 'Other';
+    if (groupBy === 'status') {
+        const map = {
+            'completed': 'Completed', 'in-process': 'In Progress', 'to-be-started': 'To Be Started',
+            'overdue': 'Overdue', 'postponed': 'Postponed', 'not-completed': 'Not Completed'
+        };
+        return map[value] || String(value);
+    }
+    if (groupBy === 'type') {
+        return value === 'work' ? 'Work Tasks' : value === 'attendance' ? 'Attendance' : String(value);
+    }
+    if (groupBy === 'budgetHead') {
+        return value === 'UNALLOCATED' ? 'Unallocated' : String(value);
+    }
+    return String(value);
+}
+
+function groupRows(rows, groupBy) {
+    if (groupBy === 'none') return null;
+    const groups = {};
+    rows.forEach(row => {
+        let key;
+        if (groupBy === 'status') key = row.status || 'unknown';
+        else if (groupBy === 'staff') key = row.staffName || 'Unknown';
+        else if (groupBy === 'type') key = row.type || 'unknown';
+        else if (groupBy === 'budgetHead') key = row.budgetHeadId || 'UNALLOCATED';
+        else key = 'All';
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(row);
+    });
+    return groups;
+}
+
+function renderGroupedTable(state) {
+    const groups = state.groupedSections;
+    if (!groups || Object.keys(groups).length === 0) {
+        return `<div class="team-activities-empty">No activities found for the selected filters.</div>`;
+    }
+    const collapsed = state.collapsedGroups;
+    const currentUserId = window.AppAuth?.getUser ? window.AppAuth.getUser()?.id : null;
+    const currentUser = window.AppAuth?.getUser ? window.AppAuth.getUser() : null;
+    const canAdminDelete = !!(currentUser && (currentUser.role === 'Administrator' || currentUser.isAdmin));
+
+    const groupKeys = Object.keys(groups).sort((a, b) => {
+        if (state.groupBy === 'status') {
+            const order = ['in-process', 'overdue', 'to-be-started', 'postponed', 'completed', 'not-completed'];
+            return (order.indexOf(a) === -1 ? 99 : order.indexOf(a)) - (order.indexOf(b) === -1 ? 99 : order.indexOf(b));
+        }
+        return a.localeCompare(b);
+    });
+
+    return groupKeys.map(key => {
+        const items = groups[key];
+        const isCollapsed = collapsed.has(key);
+        const count = items.length;
+        const completedCount = items.filter(r => String(r.status).toLowerCase() === 'completed').length;
+        const headerRight = `<span class="team-activities-group-counts">${completedCount}/${count} done</span>`;
+
+        const rows = paginate(items, state.page, state.pageSize).map(row => {
+            const statusClass = String(row.status || '').toLowerCase().replace(/\s+/g, '-');
+            const isOwner = currentUserId && row.userId && currentUserId === row.userId;
+            const canComplete = row.type === 'work' && isIncompleteStatus(row.status) && row.planId && Number.isInteger(row.taskIndex) && (isOwner || canAdminDelete);
+            const hasProgress = row.type === 'work' && (row.progressPercent !== null || row.progressStatus || row.progressNote);
+            const statusLabel = row.progressStatus ? String(row.progressStatus).replace(/_/g, ' ') : '';
+            const progressLabel = row.progressPercent !== null ? `${row.progressPercent}%` : '';
+            const noteText = String(row.progressNote || '').trim();
+            const tooltip = noteText ? ` title="${safeHtml(noteText)}"` : '';
+            const progressBadge = hasProgress
+                ? `<div class="team-activities-progress"${tooltip}>${safeHtml(progressLabel)}${progressLabel && statusLabel ? ' &bull; ' : ''}${safeHtml(statusLabel)}</div>`
+                : '';
+            return `
+            <tr>
+                <td>${safeHtml(row.date)}</td>
+                ${state.groupBy !== 'staff' ? `<td>${safeHtml(row.staffName)}</td>` : ''}
+                <td class="team-activities-type">${safeHtml(row.type)}</td>
+                <td><span class="team-activities-status status-${safeHtml(statusClass)}">${safeHtml(row.status)}</span></td>
+                <td class="team-activities-desc">${safeHtml(row.description)}${progressBadge}</td>
+                <td>${safeHtml(row.sourceTime || '--')}</td>
+                <td>
+                    <div class="team-activities-row-actions">
+                        <button class="team-activities-row-btn" data-view-date="${safeHtml(row.date)}" data-view-user="${safeHtml(row.userId)}">
+                            <i class="fa-solid fa-eye"></i> View
+                        </button>
+                        ${canComplete ? `
+                            <button class="team-activities-row-btn success" data-action="complete" data-plan-id="${safeHtml(row.planId)}" data-task-index="${row.taskIndex}" data-user-id="${safeHtml(row.userId)}" onclick="window.app_teamActivitiesCompleteTask(this)">
+                                <i class="fa-solid fa-check"></i> Complete
+                            </button>
+                        ` : ''}
+                    </div>
+                </td>
+            </tr>`;
+        }).join('');
+
+        return `
+        <div class="team-activities-group" data-group-key="${safeHtml(key)}">
+            <button class="team-activities-group-header" data-toggle-group="${safeHtml(key)}">
+                <i class="fa-solid ${isCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'}"></i>
+                <span class="team-activities-group-label">${getGroupLabel(state.groupBy, key)}</span>
+                <span class="team-activities-group-count">${count}</span>
+                ${headerRight}
+            </button>
+            ${isCollapsed ? '' : `
+            <table class="team-activities-table team-activities-group-table">
+                <thead><tr>
+                    <th>Date</th>
+                    ${state.groupBy !== 'staff' ? '<th>Staff</th>' : ''}
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Description</th>
+                    <th>Time</th>
+                    <th>Actions</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+            </table>`}
+        </div>`;
+    }).join('');
+}
+
 function updateUI() {
     const state = getTeamActivitiesState();
     // Ensure time column stays visible for filtering
     state.columnVisibility.sourceTime = true;
     applyFilters(state);
-    const totalPages = Math.max(1, Math.ceil(state.filtered.length / state.pageSize));
+
+    // Group rows if groupBy is active
+    if (state.groupBy !== 'none') {
+        state.groupedSections = groupRows(state.filtered, state.groupBy);
+    } else {
+        state.groupedSections = null;
+    }
+
+    const totalItems = state.groupBy !== 'none'
+        ? Object.values(state.groupedSections || {}).reduce((sum, arr) => sum + arr.length, 0)
+        : state.filtered.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / state.pageSize));
     if (state.page > totalPages) state.page = totalPages;
 
     const summaryEl = document.getElementById('team-activities-summary');
@@ -527,7 +670,7 @@ function updateUI() {
     const staffWrap = document.getElementById('team-activities-staff-wrap');
 
     if (summaryEl) summaryEl.innerHTML = renderSummary(state);
-    if (tableWrap) tableWrap.innerHTML = renderTable(state);
+    if (tableWrap) tableWrap.innerHTML = state.groupBy !== 'none' ? renderGroupedTable(state) : renderTable(state);
     if (paginationWrap) paginationWrap.innerHTML = renderPagination(state);
     if (columnsWrap) columnsWrap.innerHTML = renderColumnsPanel(state);
     if (staffWrap) staffWrap.innerHTML = renderStaffFilter(state);
@@ -593,6 +736,7 @@ function updateStateFromFilters() {
     const searchInput = document.getElementById('team-activities-search');
     const pageSizeSelect = document.getElementById('team-activities-page-size');
     const budgetHeadSelect = document.getElementById('team-activities-budget-head');
+    const advancedLogicSelect = document.getElementById('team-activities-advanced-logic');
 
     if (startInput) state.startIso = startInput.value || state.startIso;
     if (endInput) state.endIso = endInput.value || state.endIso;
@@ -601,7 +745,9 @@ function updateStateFromFilters() {
     if (searchInput) state.search = searchInput.value || '';
     if (pageSizeSelect) state.pageSize = Number(pageSizeSelect.value) || DEFAULT_PAGE_SIZE;
     if (budgetHeadSelect) state.budgetHead = budgetHeadSelect.value || 'all';
+    if (advancedLogicSelect) state.advancedLogic = advancedLogicSelect.value || 'AND';
 
+    syncAdvancedFiltersFromDOM(state);
     state.page = 1;
     updateUI();
 }
@@ -662,6 +808,57 @@ function bindEvents() {
             if (action === 'remove' && window.app_teamActivitiesRemoveTask) {
                 await window.app_teamActivitiesRemoveTask(actionBtn);
             }
+            if (action === 'link') {
+                const planId = actionBtn.getAttribute('data-plan-id');
+                const taskIndex = actionBtn.getAttribute('data-task-index');
+                const existingLink = actionBtn.getAttribute('data-existing-link') || '';
+
+                // Remove any existing popover
+                const oldPop = document.querySelector('.ta-link-popover');
+                if (oldPop) oldPop.remove();
+
+                const popover = document.createElement('div');
+                popover.className = 'ta-link-popover';
+                popover.innerHTML = `
+                    <div class="ta-link-popover-inner">
+                        <label class="ta-link-popover-label"><i class="fa-brands fa-microsoft"></i> OneDrive Link</label>
+                        <input type="url" class="ta-link-popover-input" placeholder="https://onedrive.live.com/..." value="${existingLink.replace(/"/g, '&quot;')}">
+                        <div class="ta-link-popover-actions">
+                            <button class="ta-link-popover-cancel" type="button">Cancel</button>
+                            <button class="ta-link-popover-save" type="button"><i class="fa-solid fa-check"></i> Save</button>
+                        </div>
+                    </div>
+                `;
+                const rect = actionBtn.getBoundingClientRect();
+                document.body.appendChild(popover);
+                popover.style.top = (rect.bottom + 4) + 'px';
+                popover.style.left = Math.min(rect.left, window.innerWidth - 280) + 'px';
+
+                const input = popover.querySelector('.ta-link-popover-input');
+                requestAnimationFrame(() => input.focus());
+
+                const saveLink = async () => {
+                    const val = input.value.trim();
+                    if (window.AppCalendar?.updateTaskLink) {
+                        try {
+                            await window.AppCalendar.updateTaskLink(planId, parseInt(taskIndex, 10), val);
+                            popover.remove();
+                            await refreshData();
+                            if (window.app_showSyncToast) window.app_showSyncToast(val ? 'Link saved.' : 'Link removed.');
+                        } catch (err) {
+                            console.error('Failed to update link:', err);
+                            alert('Failed to update link.');
+                        }
+                    }
+                };
+
+                popover.querySelector('.ta-link-popover-save').addEventListener('click', saveLink);
+                input.addEventListener('keydown', (ev) => {
+                    if (ev.key === 'Enter') saveLink();
+                    if (ev.key === 'Escape') popover.remove();
+                });
+                popover.querySelector('.ta-link-popover-cancel').addEventListener('click', () => popover.remove());
+            }
         }
 
         const tableHead = target.closest('th[data-sort]');
@@ -699,6 +896,11 @@ function bindEvents() {
             await window.app_teamActivitiesBulkRemove();
         }
 
+        const bulkCompleteBtn = target.closest('[data-bulk-complete]');
+        if (bulkCompleteBtn && window.app_teamActivitiesBulkComplete) {
+            await window.app_teamActivitiesBulkComplete();
+        }
+
         const loadMore = target.closest('[data-load-more-week]');
         if (loadMore) {
             extendRangeByWeeks(state, 1);
@@ -720,6 +922,16 @@ function bindEvents() {
         else if (target.matches('#team-activities-budget-head')) {
             updateStateFromFilters();
         }
+        else if (target.matches('#team-activities-group-by')) {
+            state.groupBy = target.value;
+            state.page = 1;
+            updateUI();
+        }
+        if (target.matches('.adv-filter-field, .adv-filter-op')) {
+            syncAdvancedFiltersFromDOM(state);
+            state.page = 1;
+            updateUI();
+        }
         if (target.matches('#team-activities-columns-popover input[type="checkbox"]')) {
             const col = target.getAttribute('data-column');
             if (col) state.columnVisibility[col] = target.checked;
@@ -733,6 +945,41 @@ function bindEvents() {
             } else {
                 state.staffIds = state.staffIds.filter(x => x !== id);
             }
+            updateUI();
+        }
+        const groupToggle = target.closest('[data-toggle-group]');
+        if (groupToggle) {
+            const key = groupToggle.getAttribute('data-toggle-group');
+            if (state.collapsedGroups.has(key)) {
+                state.collapsedGroups.delete(key);
+            } else {
+                state.collapsedGroups.add(key);
+            }
+            updateUI();
+        }
+        if (target.matches('[data-advanced-toggle]') || target.closest('[data-advanced-toggle]')) {
+            const panel = document.getElementById('team-activities-advanced-panel');
+            if (panel) panel.classList.toggle('open');
+        }
+        if (target.matches('[data-advanced-add]') || target.closest('[data-advanced-add]')) {
+            syncAdvancedFiltersFromDOM(state);
+            state.advancedFilters.push({ field: 'status', operator: 'contains', value: '' });
+            state.page = 1;
+            updateUI();
+            const panel = document.getElementById('team-activities-advanced-panel');
+            if (panel) panel.classList.add('open');
+        }
+        const removeBtn = target.closest('[data-adv-remove]');
+        if (removeBtn) {
+            const idx = parseInt(removeBtn.getAttribute('data-adv-remove'), 10);
+            syncAdvancedFiltersFromDOM(state);
+            state.advancedFilters.splice(idx, 1);
+            state.page = 1;
+            updateUI();
+        }
+        if (target.matches('#team-activities-advanced-logic')) {
+            state.advancedLogic = target.value;
+            state.page = 1;
             updateUI();
         }
         if (target.matches('#team-activities-filter-date')) {
@@ -785,9 +1032,21 @@ function bindEvents() {
     });
 
     document.addEventListener('input', (event) => {
-        if (!event.target.matches('#team-activities-search')) return;
-        if (searchTimer) clearTimeout(searchTimer);
-        searchTimer = setTimeout(() => updateStateFromFilters(), SEARCH_DEBOUNCE_MS);
+        if (event.target.matches('#team-activities-search')) {
+            if (searchTimer) clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => updateStateFromFilters(), SEARCH_DEBOUNCE_MS);
+        }
+        if (event.target.matches('.adv-filter-value')) {
+            const idx = parseInt(event.target.getAttribute('data-adv-value'), 10);
+            if (!isNaN(idx) && state.advancedFilters[idx]) {
+                state.advancedFilters[idx].value = event.target.value;
+                if (searchTimer) clearTimeout(searchTimer);
+                searchTimer = setTimeout(() => {
+                    state.page = 1;
+                    updateUI();
+                }, SEARCH_DEBOUNCE_MS);
+            }
+        }
     });
 }
 
@@ -876,6 +1135,10 @@ if (typeof window !== 'undefined') {
         state.type = 'all';
         state.budgetHead = 'all';
         state.search = '';
+        state.advancedFilters = [];
+        state.advancedLogic = 'AND';
+        state.groupBy = 'none';
+        state.collapsedGroups = new Set();
         state.columnFilters = { date: '', staff: '', description: '', time: '', type: '', status: '' };
         state.sortKey = 'date-desc';
         state.page = 1;
@@ -1087,6 +1350,55 @@ if (typeof window !== 'undefined') {
         }
     };
 
+    window.app_teamActivitiesBulkComplete = async function () {
+        try {
+            const state = getTeamActivitiesState();
+            const currentUser = window.AppAuth?.getUser ? window.AppAuth.getUser() : null;
+            const isAdmin = !!(currentUser && (currentUser.role === 'Administrator' || currentUser.isAdmin));
+            if (!isAdmin) {
+                alert('Only admins can bulk complete tasks.');
+                return;
+            }
+            if (!window.AppCalendar?.updateTaskStatus) {
+                alert('Complete action is not available.');
+                return;
+            }
+            const selected = new Set(state.selectedKeys || []);
+            if (!selected.size) {
+                alert('Select at least one task to complete.');
+                return;
+            }
+            const completable = state.filtered.filter(row => {
+                const key = `${row.planId || ''}__${Number.isInteger(row.taskIndex) ? row.taskIndex : ''}`;
+                return selected.has(key) && row.type === 'work' && row.planId && Number.isInteger(row.taskIndex)
+                    && String(row.status || '').toLowerCase() !== 'completed';
+            });
+            if (!completable.length) {
+                alert('No completable tasks in selection.');
+                return;
+            }
+            if (!window.appConfirm || !await window.appConfirm(`Mark ${completable.length} selected task(s) as completed?`)) {
+                return;
+            }
+            for (const row of completable) {
+                await window.AppCalendar.updateTaskStatus(row.planId, row.taskIndex, 'completed');
+            }
+            state.selectedKeys = [];
+            await refreshData();
+            if (window.app_showSyncToast) {
+                window.app_showSyncToast(`${completable.length} task(s) marked as completed.`);
+            }
+            if (typeof window.app_refreshHeroAuditLive === 'function') {
+                window.app_refreshHeroAuditLive().catch((refreshErr) => {
+                    console.warn('Hero refresh after bulk complete failed:', refreshErr);
+                });
+            }
+        } catch (err) {
+            console.error('Bulk complete failed', err);
+            alert('Failed to bulk complete tasks.');
+        }
+    };
+
     window.app_teamActivitiesBulkShift = async function () {
         try {
             const state = getTeamActivitiesState();
@@ -1192,6 +1504,99 @@ if (typeof window !== 'undefined') {
     };
 }
 
+function renderAdvancedConditions(state) {
+    const conditions = state.advancedFilters || [];
+    const fields = [
+        { value: 'status', label: 'Status' },
+        { value: 'type', label: 'Type' },
+        { value: 'staff', label: 'Staff Name' },
+        { value: 'description', label: 'Description' },
+        { value: 'budgetHead', label: 'Budget Head' },
+        { value: 'date', label: 'Date' },
+        { value: 'time', label: 'Time' }
+    ];
+    const operators = [
+        { value: 'equals', label: 'Equals' },
+        { value: 'not_equals', label: 'Not equals' },
+        { value: 'contains', label: 'Contains' },
+        { value: 'not_contains', label: 'Does not contain' },
+        { value: 'starts_with', label: 'Starts with' },
+        { value: 'gt', label: 'Greater than' },
+        { value: 'lt', label: 'Less than' }
+    ];
+
+    if (!conditions.length) {
+        return '<div class="team-activities-advanced-empty">No conditions added. Click "Add condition" to start.</div>';
+    }
+
+    return conditions.map((cond, i) => {
+        const fieldOptions = fields.map(f =>
+            `<option value="${f.value}"${cond.field === f.value ? ' selected' : ''}>${f.label}</option>`
+        ).join('');
+        const opOptions = operators.map(o =>
+            `<option value="${o.value}"${cond.operator === o.value ? ' selected' : ''}>${o.label}</option>`
+        ).join('');
+        return `
+        <div class="team-activities-advanced-condition" data-condition-index="${i}">
+            ${i > 0 ? `<span class="team-activities-advanced-connector">${state.advancedLogic}</span>` : ''}
+            <select class="adv-filter-field" data-adv-field="${i}">${fieldOptions}</select>
+            <select class="adv-filter-op" data-adv-op="${i}">${opOptions}</select>
+            <input type="text" class="adv-filter-value" data-adv-value="${i}" value="${safeHtml(cond.value || '')}" placeholder="Value...">
+            <button class="team-activities-advanced-remove" data-adv-remove="${i}" title="Remove condition">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>`;
+    }).join('');
+}
+
+function applyAdvancedFilters(state) {
+    const conditions = state.advancedFilters || [];
+    if (!conditions.length) return state.filtered;
+
+    const logic = state.advancedLogic || 'AND';
+
+    function matchCondition(row, cond) {
+        let fieldValue = '';
+        if (cond.field === 'status') fieldValue = String(row.status || '').toLowerCase();
+        else if (cond.field === 'type') fieldValue = String(row.type || '').toLowerCase();
+        else if (cond.field === 'staff') fieldValue = String(row.staffName || '').toLowerCase();
+        else if (cond.field === 'description') fieldValue = String(row.description || '').toLowerCase();
+        else if (cond.field === 'budgetHead') fieldValue = String(row.budgetHeadId || '').toLowerCase();
+        else if (cond.field === 'date') fieldValue = String(row.date || '');
+        else if (cond.field === 'time') fieldValue = String(row.sourceTime || '');
+
+        const val = String(cond.value || '').toLowerCase();
+        const op = cond.operator || 'contains';
+
+        if (op === 'equals') return fieldValue === val;
+        if (op === 'not_equals') return fieldValue !== val;
+        if (op === 'contains') return fieldValue.includes(val);
+        if (op === 'not_contains') return !fieldValue.includes(val);
+        if (op === 'starts_with') return fieldValue.startsWith(val);
+        if (op === 'gt') return fieldValue > val;
+        if (op === 'lt') return fieldValue < val;
+        return true;
+    }
+
+    if (logic === 'AND') {
+        return state.filtered.filter(row => conditions.every(c => matchCondition(row, c)));
+    } else {
+        return state.filtered.filter(row => conditions.some(c => matchCondition(row, c)));
+    }
+}
+
+function syncAdvancedFiltersFromDOM(state) {
+    const conditions = state.advancedFilters || [];
+    conditions.forEach((cond, i) => {
+        const fieldEl = document.querySelector(`[data-adv-field="${i}"]`);
+        const opEl = document.querySelector(`[data-adv-op="${i}"]`);
+        const valueEl = document.querySelector(`[data-adv-value="${i}"]`);
+        if (fieldEl) cond.field = fieldEl.value;
+        if (opEl) cond.operator = opEl.value;
+        if (valueEl) cond.value = valueEl.value;
+    });
+}
+
 export async function renderTeamActivitiesPage() {
     const state = getTeamActivitiesState();
     const currentUser = window.AppAuth?.getUser ? window.AppAuth.getUser() : null;
@@ -1239,6 +1644,39 @@ export async function renderTeamActivitiesPage() {
                 <div class="team-activities-filter-group">
                     <label>Budget Head</label>
                     <select id="team-activities-budget-head">${budgetHeadOptions}</select>
+                </div>
+                <div class="team-activities-filter-group">
+                    <label>Group by</label>
+                    <select id="team-activities-group-by">
+                        <option value="none"${state.groupBy === 'none' ? ' selected' : ''}>None</option>
+                        <option value="status"${state.groupBy === 'status' ? ' selected' : ''}>Status</option>
+                        <option value="staff"${state.groupBy === 'staff' ? ' selected' : ''}>Staff</option>
+                        <option value="type"${state.groupBy === 'type' ? ' selected' : ''}>Type</option>
+                        <option value="budgetHead"${state.groupBy === 'budgetHead' ? ' selected' : ''}>Budget Head</option>
+                    </select>
+                </div>
+            </div>
+            <div class="team-activities-advanced-wrap">
+                <button class="team-activities-advanced-toggle" data-advanced-toggle>
+                    <i class="fa-solid fa-sliders"></i> Advanced Filters
+                    ${state.advancedFilters.length ? `<span class="team-activities-advanced-badge">${state.advancedFilters.length}</span>` : ''}
+                </button>
+                <div class="team-activities-advanced-panel${state.advancedFilters.length ? ' open' : ''}" id="team-activities-advanced-panel">
+                    <div class="team-activities-advanced-header">
+                        <div class="team-activities-advanced-logic">
+                            <label>Match</label>
+                            <select id="team-activities-advanced-logic">
+                                <option value="AND"${state.advancedLogic === 'AND' ? ' selected' : ''}>All (AND)</option>
+                                <option value="OR"${state.advancedLogic === 'OR' ? ' selected' : ''}>Any (OR)</option>
+                            </select>
+                        </div>
+                        <button class="team-activities-advanced-add" data-advanced-add>
+                            <i class="fa-solid fa-plus"></i> Add condition
+                        </button>
+                    </div>
+                    <div class="team-activities-advanced-conditions" id="team-activities-advanced-conditions">
+                        ${renderAdvancedConditions(state)}
+                    </div>
                 </div>
             </div>
             <div id="team-activities-loading" class="team-activities-loading">Loading data...</div>

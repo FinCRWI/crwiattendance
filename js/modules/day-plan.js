@@ -97,6 +97,7 @@ function releaseOverlayLayer(element) {
 
 function removeOverlay(element) {
     if (!element) return;
+    element.dispatchEvent(new Event('remove', { bubbles: false }));
     releaseOverlayLayer(element);
     element.remove();
 }
@@ -1724,6 +1725,51 @@ export async function openDayPlan(date, targetUserId = null, forcedScope = null,
             if (window.performance?.mark) window.performance.mark('day-plan-personal-annual-hydrate-done');
             scheduleDayPlanMaintenance({ date: dateKey, targetId, forcedScope, options, modalContent });
 
+            // Live-refresh: re-fetch data when work_plans changes while modal is open
+            const liveRefreshHandler = async (event) => {
+                const collection = String(event?.detail?.collection || '');
+                if (collection !== 'work_plans') return;
+                if (!isCurrentRequest()) return;
+                try {
+                    const refreshedData = await loadDayPlanData(dateKey, targetId);
+                    if (!isCurrentRequest()) return;
+                    const personalWP = refreshedData.personalWorkPlan;
+                    const annualWP = refreshedData.annualWorkPlan;
+                    const allDP = refreshedData.allDayPlans;
+                    const freshUsers = await getReferencedDayPlanUsers(allDP, targetId);
+                    if (!isCurrentRequest()) return;
+
+                    const freshNormalize = (workPlan, scope, userName = null) => {
+                        if (!workPlan) return [];
+                        if (Array.isArray(workPlan.plans) && workPlan.plans.length > 0) {
+                            return workPlan.plans.map(p => ({
+                                ...p,
+                                planScope: scope,
+                                userName: userName || workPlan.userName,
+                                isReference: !!userName
+                            })).filter(p => p.isRemoved !== true && (!hideAutoForwardedTasks || !isAutoForwardedTask(p)))
+                                .filter(p => isTaskVisibleToViewer(p, String(workPlan.userId || ''), String(currentUser?.id || '')));
+                        }
+                        return [];
+                    };
+
+                    const personalBlocks = freshNormalize(personalWP, 'personal');
+                    const annualBlocks = freshNormalize(annualWP, 'annual');
+                    const initialBlocks = [...personalBlocks, ...annualBlocks];
+                    headerWrap.replaceChildren(createDayPlanHeader(dateKey, isEditingOther, headerName, !!(personalWP || annualWP), targetId));
+                    bodyWrap.replaceChildren(createDayPlanForm(dateKey, targetId, personalWP, annualWP, initialBlocks, freshUsers, defaultScope, selectableCollaborators, isAdmin, currentUser, options));
+                } catch (refreshErr) {
+                    console.warn('[DayPlan] Live refresh failed:', refreshErr);
+                }
+            };
+            window.addEventListener('app:db-write', liveRefreshHandler);
+
+            // Clean up listener when modal is closed
+            const cleanupLiveRefresh = () => {
+                window.removeEventListener('app:db-write', liveRefreshHandler);
+                modalOverlay.removeEventListener('remove', cleanupLiveRefresh);
+            };
+            modalOverlay.addEventListener('remove', cleanupLiveRefresh);
 
         } catch (err) {
             console.error('Failed to open day plan:', err);

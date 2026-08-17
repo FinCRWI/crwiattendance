@@ -1008,6 +1008,119 @@ export class Calendar {
         }
     }
 
+    async updateTaskLink(planId, taskIndex, link) {
+        try {
+            const plan = await this.db.get('work_plans', planId);
+            if (!plan || !plan.plans || !plan.plans[taskIndex]) {
+                throw new Error('Plan or task not found');
+            }
+
+            plan.plans[taskIndex].onedriveLink = link || '';
+            plan.updatedAt = new Date().toISOString();
+
+            await this.db.put('work_plans', plan);
+            return plan;
+        } catch (err) {
+            console.error('Failed to update task link:', err);
+            throw err;
+        }
+    }
+
+    async addTaskComment(planId, taskIndex, text, authorName) {
+        try {
+            const plan = await this.db.get('work_plans', planId);
+            if (!plan || !plan.plans || !plan.plans[taskIndex]) {
+                throw new Error('Plan or task not found');
+            }
+            const task = plan.plans[taskIndex];
+            if (!Array.isArray(task.comments)) task.comments = [];
+            const comment = {
+                text: String(text || '').trim(),
+                author: authorName || 'Staff',
+                ts: Date.now()
+            };
+            if (!comment.text) return task.comments;
+            task.comments.push(comment);
+            plan.updatedAt = new Date().toISOString();
+            await this.db.put('work_plans', plan);
+            return task.comments;
+        } catch (err) {
+            console.error('Failed to add task comment:', err);
+            throw err;
+        }
+    }
+
+    async updateTaskDate(planId, taskIndex, newDate) {
+        try {
+            const plan = await this.db.get('work_plans', planId);
+            if (!plan || !plan.plans || !plan.plans[taskIndex]) {
+                throw new Error('Plan or task not found');
+            }
+
+            const task = plan.plans[taskIndex];
+            const oldDate = task.date || plan.date;
+            const userId = plan.userId;
+
+            // If the date didn't actually change, just return
+            if (oldDate === newDate) {
+                return plan;
+            }
+
+            // Remove task from old plan
+            plan.plans.splice(taskIndex, 1);
+            plan.updatedAt = new Date().toISOString();
+
+            // If old plan is now empty, delete it; otherwise save
+            if (plan.plans.length === 0) {
+                await this.db.delete('work_plans', planId);
+            } else {
+                await this.db.put('work_plans', plan);
+            }
+
+            // Add task to new date's plan
+            const newTask = {
+                ...task,
+                date: newDate,
+                status: 'to-be-started',
+                postponedFromDate: oldDate,
+                postponedToDate: newDate
+            };
+
+            let newPlan = await this.getWorkPlan(userId, newDate);
+            if (!newPlan) {
+                const currentUser = AppAuth.getUser();
+                const targetUser = userId === currentUser?.id
+                    ? currentUser
+                    : await this.db.get('users', userId);
+                newPlan = {
+                    id: `plan_${userId}_${newDate}`,
+                    userId: userId,
+                    userName: targetUser?.name || '',
+                    date: newDate,
+                    plans: [],
+                    updatedAt: new Date().toISOString()
+                };
+            }
+
+            if (!newPlan.plans) newPlan.plans = [];
+            newPlan.plans.push(newTask);
+            newPlan.updatedAt = new Date().toISOString();
+            await this.db.put('work_plans', newPlan);
+
+            this.invalidateCarryForwardCache();
+
+            // Trigger rating recalculation
+            if (AppRating) {
+                await AppRating.updateUserRating(userId);
+            }
+
+            return newPlan;
+        } catch (err) {
+            console.error('Failed to update task date:', err);
+            throw err;
+        }
+    }
+
     async removeTask(planId, taskIndex) {
         try {
             const currentUser = AppAuth.getUser();

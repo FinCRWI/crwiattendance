@@ -121,6 +121,19 @@ export const AppConfig = {
         DOC_PATH: 'settings/dashboard_customization',
         SCHEMA_VERSION: 1
     },
+    KANBAN: {
+        DEFAULT_COLUMNS: [
+            { key: 'to-be-started', label: 'To Be Started', icon: 'fa-circle-dot' },
+            { key: 'in-process', label: 'In Progress', icon: 'fa-spinner' },
+            { key: 'completed', label: 'Completed', icon: 'fa-circle-check' },
+            { key: 'overdue', label: 'Overdue', icon: 'fa-circle-exclamation' },
+            { key: 'postponed', label: 'Postponed', icon: 'fa-clock' },
+            { key: 'not-completed', label: 'Not Completed', icon: 'fa-circle-xmark' }
+        ],
+        ENABLE_DRAG_DROP: true,
+        MAX_CARDS_PER_COLUMN: 50,
+        DEFAULT_RANGE_DAYS: 7
+    },
     DEMO_USER_USERNAME: 'demo',
     isDemoUser(user) {
         if (!user) return false;
