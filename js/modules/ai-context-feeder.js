@@ -453,7 +453,7 @@ function inferUserIdsFromWrite(detail = {}) {
 
 function handleDbWrite(detail = {}) {
     const collection = String(detail?.collection || '').trim();
-    if (!['work_plans', 'task_activity_events', 'attendance', 'users'].includes(collection)) return;
+    if (!['work_plans', 'task_activity_events'].includes(collection)) return;
     const userIds = inferUserIdsFromWrite(detail);
     if (!userIds.length && detail?.op === 'deleteMany') return;
     userIds.forEach((userId) => {

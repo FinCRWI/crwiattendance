@@ -15,10 +15,8 @@ const DAY_PLAN_LOAD_TTL_MS = 300000;
 const dayPlanLoadCache = new Map();    if (typeof window !== 'undefined' && !window.__dayPlanLoadCacheBound) {
     window.addEventListener('app:db-write', (event) => {
         const collection = String(event?.detail?.collection || '');
-        if (collection === 'work_plans' || collection === 'users') {
-            dayPlanLoadCache.clear();
-        }
         if (collection === 'work_plans') {
+            dayPlanLoadCache.clear();
             dayPlanMaintenanceDone.clear();
             // A save changed the plans on disk — drop the 5-minute prefetch
             // snapshot so the next modal open shows the saved data, not the

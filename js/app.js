@@ -7239,7 +7239,11 @@ async function handleAttendance() {
     const locationText = document.getElementById('location-text');
     const { status } = await window.AppAttendance.getStatus();
 
-    if (btn) btn.disabled = true;
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add('btn-loading');
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Loading...`;
+    }
     attendanceActionInFlight = true;
 
     try {
@@ -7277,8 +7281,10 @@ async function handleAttendance() {
             // Pre-fill Checkout Description from Work Plan
             const user = window.AppAuth.getUser();
             const today = getLocalISO();
-            const workPlan = await window.AppCalendar.getWorkPlan(user.id, today, { includeAnnual: true, mergeAnnual: true });
-            const collaborations = await window.AppCalendar.getCollaborations(user.id, today);
+            const [workPlan, collaborations] = await Promise.all([
+                window.AppCalendar.getWorkPlan(user.id, today, { includeAnnual: true, mergeAnnual: true }),
+                window.AppCalendar.getCollaborations(user.id, today)
+            ]);
             if (window.app_checkoutSummaryDate !== today) {
                 window.app_checkoutSummaryDate = today;
                 window.app_checkoutSummaryDraft = '';
@@ -7560,6 +7566,7 @@ async function handleAttendance() {
         alert(err.message || err);
         if (btn) {
             btn.disabled = false;
+            btn.classList.remove('btn-loading');
             btn.innerHTML = status === 'out' ? 'Check-in <i class="fa-solid fa-fingerprint"></i>' : 'Check-out <i class="fa-solid fa-fingerprint"></i>';
         }
     } finally {
@@ -9217,6 +9224,34 @@ window.app_editUser = async (userId) => {
             pnl.style.display = 'block';
         }
     }
+};
+
+window.app_linkTelegram = async () => {
+    const user = window.AppAuth.getUser();
+    if (!user) return;
+
+    if (user.telegramChatId) {
+        alert(`✅ Telegram is already linked!\n\nYour account is connected to Telegram.\nChat ID: ${user.telegramChatId}`);
+        return;
+    }
+
+    const html = `
+        <div style="text-align:center;padding:1.5rem;">
+            <i class="fa-brands fa-telegram" style="font-size:3rem;color:#2563eb;margin-bottom:1rem;display:block;"></i>
+            <h3 style="margin-bottom:0.5rem;">Link Your Telegram Account</h3>
+            <p style="color:#6b7280;margin-bottom:1.5rem;">Follow these steps to enable Telegram commands:</p>
+            <ol style="text-align:left;max-width:320px;margin:0 auto 1.5rem;color:#374151;line-height:1.8;">
+                <li>Open Telegram and search for <b>@crwi_attendance_bot</b></li>
+                <li>Send <b>/start</b> to the bot</li>
+                <li>Copy the code shown below and send it to the bot</li>
+            </ol>
+            <div style="background:#f3f4f6;border-radius:8px;padding:1rem;margin-bottom:1rem;">
+                <code style="font-size:1.2rem;color:#2563eb;letter-spacing:2px;">${user.id.slice(-8).toUpperCase()}</code>
+            </div>
+            <p style="font-size:0.8rem;color:#9ca3af;">Or tell your admin to set your <code>telegramChatId</code> manually.</p>
+        </div>
+    `;
+    window.app_showModal(html, 'telegram-link-modal');
 };
 
 window.app_notifyUser = (userId) => {

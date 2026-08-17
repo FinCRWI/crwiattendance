@@ -255,6 +255,11 @@ export async function renderProfile() {
                                     <i class="fa-solid fa-chevron-right pro-quick-arrow"></i>
                                 </button>
                                 ${isViewingSelf ? `
+                                <button class="pro-quick-item" onclick="window.app_linkTelegram()">
+                                    <span class="pro-quick-icon" style="background:#eff6ff;color:#2563eb;"><i class="fa-brands fa-telegram"></i></span>
+                                    <span>${profileUser.telegramChatId ? '✅ Telegram Linked' : 'Link Telegram'}</span>
+                                    <i class="fa-solid fa-chevron-right pro-quick-arrow"></i>
+                                </button>
                                 <button class="pro-quick-item pro-quick-item-danger" onclick="window.app_confirmSignOut()">
                                     <span class="pro-quick-icon" style="background:#fef2f2;color:#dc2626;"><i class="fa-solid fa-right-from-bracket"></i></span>
                                     <span>Sign Out</span>

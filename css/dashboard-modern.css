@@ -192,12 +192,13 @@
    these overrides (same !important weight, higher specificity) lift the cap. */
 .modern-dashboard.dashboard-staff-view .dashboard-hero-card,
 .modern-dashboard.dashboard-admin-view .dashboard-hero-card {
-  height: auto !important;
-  block-size: auto !important;
+  height: clamp(84px, 5.4vw, 100px) !important;
+  block-size: clamp(84px, 5.4vw, 100px) !important;
   min-height: clamp(84px, 5.4vw, 100px) !important;
   min-block-size: clamp(84px, 5.4vw, 100px) !important;
-  max-height: none !important;
-  max-block-size: none !important;
+  max-height: clamp(84px, 5.4vw, 100px) !important;
+  max-block-size: clamp(84px, 5.4vw, 100px) !important;
+  overflow: hidden;
 }
 
 .modern-dashboard .dashboard-hero-card::before {

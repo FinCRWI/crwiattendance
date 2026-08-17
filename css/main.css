@@ -993,7 +993,6 @@ body {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 0.75rem;
-    animation: fadeUp var(--motion-med) var(--easing-standard);
 }
 
 .full-width {
@@ -1833,8 +1832,11 @@ body {
 }
 
 .card:hover {
-    transform: translateY(-2px);
     box-shadow: var(--shadow-md);
+}
+
+.dashboard-grid .card:hover {
+    transform: none;
 }
 
 .action-btn {
@@ -2473,7 +2475,6 @@ textarea:focus {
     color: #1e293b;
     box-shadow: 0 14px 32px rgba(15, 23, 42, 0.24);
     padding: clamp(0.56rem, 1.4vw, 0.78rem);
-    animation: heroCardReveal 320ms ease-out both;
 }
 
 .dashboard-hero-stats-card::before {
@@ -11210,6 +11211,14 @@ body.dashboard-max-open {
 .dashboard-checkin-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+}
+
+.dashboard-checkin-btn.btn-loading {
+    opacity: 0.6 !important;
+    pointer-events: none !important;
+    background: #94a3b8 !important;
+    color: #fff !important;
+    border-color: #94a3b8 !important;
 }
 
 .dashboard-checkin-location {

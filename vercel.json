@@ -11,6 +11,28 @@
         {
             "source": "/api/telegram-send",
             "destination": "/api/telegram-send"
+        },
+        {
+            "source": "/api/telegram-webhook",
+            "destination": "/api/telegram-webhook"
+        },
+        {
+            "source": "/api/telegram-scheduler",
+            "destination": "/api/telegram-scheduler"
+        }
+    ],
+    "crons": [
+        {
+            "path": "/api/telegram-scheduler?task=absentee",
+            "schedule": "30 5 * * 1-5"
+        },
+        {
+            "path": "/api/telegram-scheduler?task=standup",
+            "schedule": "30 12 * * 1-5"
+        },
+        {
+            "path": "/api/telegram-scheduler?task=leaderboard",
+            "schedule": "30 3 * * 1"
         }
     ]
 }

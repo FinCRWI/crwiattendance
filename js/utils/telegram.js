@@ -40,3 +40,24 @@ export function telegramNotifyTaskTagged(tagger, task) {
     const shortTask = (task || '').length > 80 ? task.slice(0, 80) + '...' : (task || 'untitled');
     sendTelegramNotification(`📋 <b>${tagger}</b> tagged you in: "${shortTask}"`);
 }
+
+export async function linkTelegramAccount(chatId) {
+    try {
+        const user = window.AppAuth?.getUser?.();
+        if (!user) return { ok: false, error: 'Not logged in' };
+
+        const fresh = await window.AppDB?.get?.('users', user.id);
+        if (!fresh) return { ok: false, error: 'User not found' };
+
+        fresh.telegramChatId = String(chatId);
+        await window.AppDB.put('users', fresh);
+        return { ok: true };
+    } catch (err) {
+        return { ok: false, error: err.message };
+    }
+}
+
+export function getTelegramLinkUrl() {
+    const botUsername = 'crwi_attendance_bot';
+    return `https://t.me/${botUsername}?start=link`;
+}

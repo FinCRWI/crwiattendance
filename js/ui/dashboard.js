@@ -2338,9 +2338,7 @@ export async function renderDashboard() {
             canUndo: true
         });
 
-        const personalPerfData = await personalPerfPromise;
-        cleanupPerformanceChart();
-        const staffPerfHTML = wvIf('staffPerformance', renderStaffPerformance(personalPerfData, { windowDays: 7 }));
+        const staffPerfHTML = wvIf('staffPerformance', '<div id="dashboard-perf-slot" class="card" style="min-height:200px;"><div style="display:flex;align-items:center;justify-content:center;height:200px;color:#94a3b8;font-size:0.85rem;"><i class="fa-solid fa-spinner fa-spin" style="margin-right:0.5rem;"></i>Loading performance...</div></div>');
         detailSectionHTML = `
                     <div class="dashboard-detail-section" data-zone-id="detailSection">
                         ${isFullAdmin ? `<div class="dashboard-admin-actions-row">
@@ -2360,9 +2358,7 @@ export async function renderDashboard() {
                 ${renderStatsCard('Yearly Summary', isViewingSelf ? yearlyStats.label : `${yearlyStats.label} for ${targetStaff?.name || 'Staff'}`, yearlyStats, 'yearly')}
             </div>`);
     } else {
-        const personalPerfData = await personalPerfPromise;
-        cleanupPerformanceChart();
-        const staffPerfHTML = wvIf('staffPerformance', renderStaffPerformance(personalPerfData, { windowDays: 7 }));
+        const staffPerfHTML = wvIf('staffPerformance', '<div id="dashboard-perf-slot" class="card" style="min-height:200px;"><div style="display:flex;align-items:center;justify-content:center;height:200px;color:#94a3b8;font-size:0.85rem;"><i class="fa-solid fa-spinner fa-spin" style="margin-right:0.5rem;"></i>Loading performance...</div></div>');
         detailSectionHTML = `
                     <div class="dashboard-detail-section" data-zone-id="detailSection">
                         ${staffPerfHTML}
@@ -2460,6 +2456,24 @@ export async function renderDashboard() {
 
     markPerf('dashboard:render:end');
     measurePerf('dashboard:render', 'dashboard:render:start', 'dashboard:render:end');
+
+    // Deferred: populate personal performance widget after HTML is in DOM
+    personalPerfPromise.then(personalPerfData => {
+        try {
+            cleanupPerformanceChart();
+            const slot = document.getElementById('dashboard-perf-slot');
+            if (slot && personalPerfData) {
+                const perfVisible = wv['staffPerformance'] !== false;
+                if (perfVisible) {
+                    slot.outerHTML = renderStaffPerformance(personalPerfData, { windowDays: 7 });
+                } else {
+                    slot.style.display = 'none';
+                }
+            } else if (slot) {
+                slot.style.display = 'none';
+            }
+        } catch { /* best-effort */ }
+    }).catch(() => {});
 
     // Clear skeleton loading state
     const skeletonClearTarget = document.getElementById('page-content');

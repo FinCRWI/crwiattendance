@@ -415,7 +415,7 @@ export class Database {
             }
         }
 
-        const pollDelays = [350, 700, 1200, 1800];
+        const pollDelays = [200, 400, 800];
         for (const delayMs of pollDelays) {
             await this.sleep(delayMs);
             const candidate = await this.getDailySummary(key);
