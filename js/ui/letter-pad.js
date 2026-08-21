@@ -1,6 +1,6 @@
-import { Document, Packer, Paragraph, TextRun, ImageRun, Header, Footer, AlignmentType, convertMillimetersToTwip } from 'docx';
-import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
+import { Document, Packer, Paragraph, TextRun, ImageRun, Header, Footer, AlignmentType, convertMillimetersToTwip } from 'https://esm.sh/docx@8.5.0';
+import { jsPDF } from 'https://esm.sh/jspdf@2.5.1';
+import html2canvas from 'https://esm.sh/html2canvas@1.4.1';
 import { safeHtml, safeAttr, safeUrl } from './helpers.js';
 
 const DEFAULT_PROFILE = Object.freeze({
