@@ -2272,13 +2272,14 @@ export class Analytics {
             stats: currentStats,
             trend,
             insights,
-            windowDays,
+            windowDays: options.windowDays ?? 7,
             computedAt: Date.now()
         };
     } catch (err) {
         console.warn('[Analytics] getPersonalPerformance failed for', userId, err?.message || err);
         const empty = this._emptyPerformance();
-        return { ...empty, userId, trend: [], insights: [], windowDays, computedAt: Date.now() };
+        const defaultWindowDays = Math.max(1, Number(options.windowDays ?? 7));
+        return { ...empty, userId, trend: [], insights: [], windowDays: defaultWindowDays, computedAt: Date.now() };
     }
     }
 
