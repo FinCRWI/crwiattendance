@@ -4,10 +4,12 @@
  * and optionally fetches a saint image from Wikipedia.
  *
  * Source: https://gcatholic.org/calendar/2026/IN-en
- * Proxy: /api/feast-proxy
+ * Uses AllOrigins CORS proxy for GitHub Pages compatibility
  */
 
-const FEAST_PROXY_URL = '/api/feast-proxy';
+const FEAST_ICAL_URL = 'https://gcatholic.org/data/calendar/2026/IN-en.ics';
+const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+const FEAST_PROXY_URL = CORS_PROXY + encodeURIComponent(FEAST_ICAL_URL);
 
 const SEASON_COLORS = Object.freeze({
     'Advent': '#6b21a8',
