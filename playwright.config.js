@@ -20,7 +20,9 @@ module.exports = defineConfig({
     trace: "retain-on-failure"
   },
   webServer: {
-    command: "powershell -NoProfile -ExecutionPolicy Bypass -File ./test_server.ps1",
+    command: process.env.USE_PYTHON_SERVER === "1" 
+      ? "python3 ./test_server.py" 
+      : "powershell -NoProfile -ExecutionPolicy Bypass -File ./test_server.ps1",
     url: `${baseURL}/index.html`,
     timeout: 120000,
     reuseExistingServer: true
